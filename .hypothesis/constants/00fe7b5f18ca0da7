@@ -1,0 +1,4 @@
+# file: C:\Users\林哲緯\Documents\GitHub\recommendation-algorithm\src\utils\abbreviations.py
+# hypothesis_version: 6.135.26
+
+['ai', 'be', 'devops', 'fe', 'ft', 'hr', 'ml', 'pm', 'pt', 'qa', 'rd', 'ue', 'ui', '人力資源', '人工智慧', '介面設計師', '使用者體驗設計師', '全職', '兼職', '前端工程師', '品質保證工程師', '後端工程師', '機器學習工程師', '產品經理', '研發工程師', '開發維運工程師']

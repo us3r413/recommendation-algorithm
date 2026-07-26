@@ -1,0 +1,838 @@
+{
+  "pbtResults": {
+    "1.2 為 `abbreviation_expand` 撰寫 property test": {
+      "status": "passed",
+      "lastRunTimestamp": 1785047116307
+    },
+    "2.3 為 `querytoRequirement` 撰寫 property test（Property 1）": {
+      "status": "passed",
+      "lastRunTimestamp": 1785047508942
+    },
+    "2.5 為有效 LLM 回應撰寫 property test（Property 3）": {
+      "status": "passed",
+      "lastRunTimestamp": 1785047608629
+    },
+    "2.6 為薪資標籤格式撰寫 property test（Property 4）": {
+      "status": "passed",
+      "lastRunTimestamp": 1785047622513
+    },
+    "2.4 為 fallback 撰寫 property test（Property 5）": {
+      "status": "passed",
+      "lastRunTimestamp": 1785047623459
+    },
+    "4.3 為 `semantic_expand` 撰寫 property test（Property 6 & 7 & 8）": {
+      "status": "passed",
+      "lastRunTimestamp": 1785047744118
+    },
+    "4.8 為 score 欄位撰寫 property test（Property 12 & 13）": {
+      "status": "passed",
+      "lastRunTimestamp": 1785048274743
+    },
+    "4.6 為薪資過濾撰寫 property test（Property 10）": {
+      "status": "passed",
+      "lastRunTimestamp": 1785048327410
+    },
+    "4.7 為職務名稱過濾撰寫 property test（Property 11）": {
+      "status": "passed",
+      "lastRunTimestamp": 1785048433505
+    },
+    "4.5 為城市過濾撰寫 property test（Property 9）": {
+      "status": "passed",
+      "lastRunTimestamp": 1785048550837
+    },
+    "6.3 為匿名/冷啟動排序撰寫 property test（Property 14）": {
+      "status": "passed",
+      "lastRunTimestamp": 1785048802947
+    },
+    "6.5 為 personal score 公式撰寫 property test（Property 15）": {
+      "status": "passed",
+      "lastRunTimestamp": 1785048869730
+    },
+    "6.7 為 final score 公式撰寫 property test（Property 16）": {
+      "status": "passed",
+      "lastRunTimestamp": 1785049009030
+    },
+    "6.9 為輸出長度撰寫 property test（Property 17）": {
+      "status": "passed",
+      "lastRunTimestamp": 1785049180962
+    },
+    "6.10 為無洩漏計算欄位撰寫 property test（Property 18）": {
+      "status": "passed",
+      "lastRunTimestamp": 1785049207048
+    },
+    "6.11 為個人化排序順序撰寫 property test（Property 19）": {
+      "status": "passed",
+      "lastRunTimestamp": 1785049246379
+    }
+  },
+  "executionHistory": {
+    "1.1 實作 `abbreviation_expand`": [
+      {
+        "executionId": "7fa98590-c485-47f5-823f-8d90149684d0",
+        "chatSessionId": "sess_40d8232d-3b63-4f05-b079-1ea0f78414d7",
+        "timestamp": 1784957802066
+      },
+      {
+        "executionId": "7fa98590-c485-47f5-823f-8d90149684d0",
+        "chatSessionId": "sess_40d8232d-3b63-4f05-b079-1ea0f78414d7",
+        "timestamp": 1784957815422
+      },
+      {
+        "executionId": "7fa98590-c485-47f5-823f-8d90149684d0",
+        "chatSessionId": "sess_40d8232d-3b63-4f05-b079-1ea0f78414d7",
+        "timestamp": 1784958001070
+      }
+    ],
+    "1.2 為 `abbreviation_expand` 撰寫 property test": [
+      {
+        "executionId": "7fa98590-c485-47f5-823f-8d90149684d0",
+        "chatSessionId": "sess_40d8232d-3b63-4f05-b079-1ea0f78414d7",
+        "timestamp": 1784957802968
+      },
+      {
+        "executionId": "7fa98590-c485-47f5-823f-8d90149684d0",
+        "chatSessionId": "sess_40d8232d-3b63-4f05-b079-1ea0f78414d7",
+        "timestamp": 1784958007390
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785046961773
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785046974120
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785047183608
+      }
+    ],
+    "1.3 實作 `classify_tags`": [
+      {
+        "executionId": "7fa98590-c485-47f5-823f-8d90149684d0",
+        "chatSessionId": "sess_40d8232d-3b63-4f05-b079-1ea0f78414d7",
+        "timestamp": 1784957803683
+      },
+      {
+        "executionId": "7fa98590-c485-47f5-823f-8d90149684d0",
+        "chatSessionId": "sess_40d8232d-3b63-4f05-b079-1ea0f78414d7",
+        "timestamp": 1784957816130
+      },
+      {
+        "executionId": "7fa98590-c485-47f5-823f-8d90149684d0",
+        "chatSessionId": "sess_40d8232d-3b63-4f05-b079-1ea0f78414d7",
+        "timestamp": 1784958002479
+      }
+    ],
+    "2.1 實作 `querytoRequirement` 核心邏輯": [
+      {
+        "executionId": "7fa98590-c485-47f5-823f-8d90149684d0",
+        "chatSessionId": "sess_40d8232d-3b63-4f05-b079-1ea0f78414d7",
+        "timestamp": 1784957803783
+      },
+      {
+        "executionId": "7fa98590-c485-47f5-823f-8d90149684d0",
+        "chatSessionId": "sess_40d8232d-3b63-4f05-b079-1ea0f78414d7",
+        "timestamp": 1784958007614
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785046961878
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785046974841
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785047184285
+      }
+    ],
+    "2.2 實作重試與 fallback 邏輯": [
+      {
+        "executionId": "7fa98590-c485-47f5-823f-8d90149684d0",
+        "chatSessionId": "sess_40d8232d-3b63-4f05-b079-1ea0f78414d7",
+        "timestamp": 1784957803913
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785046961976
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785047195526
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785047364719
+      }
+    ],
+    "2.3 為 `querytoRequirement` 撰寫 property test（Property 1）": [
+      {
+        "executionId": "7fa98590-c485-47f5-823f-8d90149684d0",
+        "chatSessionId": "sess_40d8232d-3b63-4f05-b079-1ea0f78414d7",
+        "timestamp": 1784957804097
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785046962080
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785047374502
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785047761243
+      }
+    ],
+    "2.4 為 fallback 撰寫 property test（Property 5）": [
+      {
+        "executionId": "7fa98590-c485-47f5-823f-8d90149684d0",
+        "chatSessionId": "sess_40d8232d-3b63-4f05-b079-1ea0f78414d7",
+        "timestamp": 1784957804208
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785046962162
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785047375377
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785047762040
+      }
+    ],
+    "2.5 為有效 LLM 回應撰寫 property test（Property 3）": [
+      {
+        "executionId": "7fa98590-c485-47f5-823f-8d90149684d0",
+        "chatSessionId": "sess_40d8232d-3b63-4f05-b079-1ea0f78414d7",
+        "timestamp": 1784957804299
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785046962235
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785047376160
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785047763023
+      }
+    ],
+    "2.6 為薪資標籤格式撰寫 property test（Property 4）": [
+      {
+        "executionId": "7fa98590-c485-47f5-823f-8d90149684d0",
+        "chatSessionId": "sess_40d8232d-3b63-4f05-b079-1ea0f78414d7",
+        "timestamp": 1784957804420
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785046962309
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785047376950
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785047763966
+      }
+    ],
+    "3. Checkpoint — QueryParser 完成": [
+      {
+        "executionId": "7fa98590-c485-47f5-823f-8d90149684d0",
+        "chatSessionId": "sess_40d8232d-3b63-4f05-b079-1ea0f78414d7",
+        "timestamp": 1784957804603
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785046962390
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785047920714
+      }
+    ],
+    "4.1 實作 `_load_known_cities` 與 `_load_job_lookup`（含快取）": [
+      {
+        "executionId": "7fa98590-c485-47f5-823f-8d90149684d0",
+        "chatSessionId": "sess_40d8232d-3b63-4f05-b079-1ea0f78414d7",
+        "timestamp": 1784957804736
+      },
+      {
+        "executionId": "7fa98590-c485-47f5-823f-8d90149684d0",
+        "chatSessionId": "sess_40d8232d-3b63-4f05-b079-1ea0f78414d7",
+        "timestamp": 1784958008534
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785046962463
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785046975856
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785047185412
+      }
+    ],
+    "4.2 實作 `semantic_expand`": [
+      {
+        "executionId": "7fa98590-c485-47f5-823f-8d90149684d0",
+        "chatSessionId": "sess_40d8232d-3b63-4f05-b079-1ea0f78414d7",
+        "timestamp": 1784957804818
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785046962541
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785047196294
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785047365475
+      }
+    ],
+    "4.3 為 `semantic_expand` 撰寫 property test（Property 6 & 7 & 8）": [
+      {
+        "executionId": "7fa98590-c485-47f5-823f-8d90149684d0",
+        "chatSessionId": "sess_40d8232d-3b63-4f05-b079-1ea0f78414d7",
+        "timestamp": 1784957804903
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785046962632
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785047377900
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785047760619
+      }
+    ],
+    "4.4 實作 `grabFromDatabase` — DuckDB 查詢與 LEFT JOIN": [
+      {
+        "executionId": "7fa98590-c485-47f5-823f-8d90149684d0",
+        "chatSessionId": "sess_40d8232d-3b63-4f05-b079-1ea0f78414d7",
+        "timestamp": 1784957805052
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785046962707
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785047773660
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785047918967
+      }
+    ],
+    "4.5 為城市過濾撰寫 property test（Property 9）": [
+      {
+        "executionId": "7fa98590-c485-47f5-823f-8d90149684d0",
+        "chatSessionId": "sess_40d8232d-3b63-4f05-b079-1ea0f78414d7",
+        "timestamp": 1784957805131
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785046962777
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785047930720
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785048570238
+      }
+    ],
+    "4.6 為薪資過濾撰寫 property test（Property 10）": [
+      {
+        "executionId": "7fa98590-c485-47f5-823f-8d90149684d0",
+        "chatSessionId": "sess_40d8232d-3b63-4f05-b079-1ea0f78414d7",
+        "timestamp": 1784957805204
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785046962851
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785047931267
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785048571031
+      }
+    ],
+    "4.7 為職務名稱過濾撰寫 property test（Property 11）": [
+      {
+        "executionId": "7fa98590-c485-47f5-823f-8d90149684d0",
+        "chatSessionId": "sess_40d8232d-3b63-4f05-b079-1ea0f78414d7",
+        "timestamp": 1784957805291
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785046962925
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785047932142
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785048571946
+      }
+    ],
+    "4.8 為 score 欄位撰寫 property test（Property 12 & 13）": [
+      {
+        "executionId": "7fa98590-c485-47f5-823f-8d90149684d0",
+        "chatSessionId": "sess_40d8232d-3b63-4f05-b079-1ea0f78414d7",
+        "timestamp": 1784957805384
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785046963000
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785047932967
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785048572917
+      }
+    ],
+    "5. Checkpoint — Retriever 完成": [
+      {
+        "executionId": "7fa98590-c485-47f5-823f-8d90149684d0",
+        "chatSessionId": "sess_40d8232d-3b63-4f05-b079-1ea0f78414d7",
+        "timestamp": 1784957805467
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785046963077
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785048583821
+      }
+    ],
+    "6.1 實作 `_get_user_feature` 與 feature table 快取": [
+      {
+        "executionId": "7fa98590-c485-47f5-823f-8d90149684d0",
+        "chatSessionId": "sess_40d8232d-3b63-4f05-b079-1ea0f78414d7",
+        "timestamp": 1784957805538
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785046963157
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785047774330
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785047919765
+      }
+    ],
+    "6.2 實作 `_popularity_rank`": [
+      {
+        "executionId": "7fa98590-c485-47f5-823f-8d90149684d0",
+        "chatSessionId": "sess_40d8232d-3b63-4f05-b079-1ea0f78414d7",
+        "timestamp": 1784957805611
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785046963226
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785047933720
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785048573580
+      }
+    ],
+    "6.3 為匿名/冷啟動排序撰寫 property test（Property 14）": [
+      {
+        "executionId": "7fa98590-c485-47f5-823f-8d90149684d0",
+        "chatSessionId": "sess_40d8232d-3b63-4f05-b079-1ea0f78414d7",
+        "timestamp": 1784957805688
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785046963295
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785048711107
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785048885687
+      }
+    ],
+    "6.4 實作 `_compute_personal_score`": [
+      {
+        "executionId": "7fa98590-c485-47f5-823f-8d90149684d0",
+        "chatSessionId": "sess_40d8232d-3b63-4f05-b079-1ea0f78414d7",
+        "timestamp": 1784957805829
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785046963398
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785048582911
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785048705922
+      }
+    ],
+    "6.5 為 personal score 公式撰寫 property test（Property 15）": [
+      {
+        "executionId": "7fa98590-c485-47f5-823f-8d90149684d0",
+        "chatSessionId": "sess_40d8232d-3b63-4f05-b079-1ea0f78414d7",
+        "timestamp": 1784957805926
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785046963466
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785048711740
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785048884619
+      }
+    ],
+    "6.6 實作 `_personalised_rank`": [
+      {
+        "executionId": "7fa98590-c485-47f5-823f-8d90149684d0",
+        "chatSessionId": "sess_40d8232d-3b63-4f05-b079-1ea0f78414d7",
+        "timestamp": 1784957806020
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785046963533
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785048712466
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785048883360
+      }
+    ],
+    "6.7 為 final score 公式撰寫 property test（Property 16）": [
+      {
+        "executionId": "7fa98590-c485-47f5-823f-8d90149684d0",
+        "chatSessionId": "sess_40d8232d-3b63-4f05-b079-1ea0f78414d7",
+        "timestamp": 1784957806117
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785046963607
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785048890299
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785049037140
+      }
+    ],
+    "6.8 實作 `ranking` routing 邏輯": [
+      {
+        "executionId": "7fa98590-c485-47f5-823f-8d90149684d0",
+        "chatSessionId": "sess_40d8232d-3b63-4f05-b079-1ea0f78414d7",
+        "timestamp": 1784957806185
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785046963681
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785048891104
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785049037793
+      }
+    ],
+    "6.9 為輸出長度撰寫 property test（Property 17）": [
+      {
+        "executionId": "7fa98590-c485-47f5-823f-8d90149684d0",
+        "chatSessionId": "sess_40d8232d-3b63-4f05-b079-1ea0f78414d7",
+        "timestamp": 1784957806258
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785046963749
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785049042937
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785049260595
+      }
+    ],
+    "6.10 為無洩漏計算欄位撰寫 property test（Property 18）": [
+      {
+        "executionId": "7fa98590-c485-47f5-823f-8d90149684d0",
+        "chatSessionId": "sess_40d8232d-3b63-4f05-b079-1ea0f78414d7",
+        "timestamp": 1784957806327
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785046963819
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785049043754
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785049261311
+      }
+    ],
+    "6.11 為個人化排序順序撰寫 property test（Property 19）": [
+      {
+        "executionId": "7fa98590-c485-47f5-823f-8d90149684d0",
+        "chatSessionId": "sess_40d8232d-3b63-4f05-b079-1ea0f78414d7",
+        "timestamp": 1784957806428
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785046963890
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785049044594
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785049262210
+      }
+    ],
+    "7. Checkpoint — Ranker 完成": [
+      {
+        "executionId": "7fa98590-c485-47f5-823f-8d90149684d0",
+        "chatSessionId": "sess_40d8232d-3b63-4f05-b079-1ea0f78414d7",
+        "timestamp": 1784957806500
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785046963960
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785049269556
+      }
+    ],
+    "8.1 實作 `recommend` entry point": [
+      {
+        "executionId": "7fa98590-c485-47f5-823f-8d90149684d0",
+        "chatSessionId": "sess_40d8232d-3b63-4f05-b079-1ea0f78414d7",
+        "timestamp": 1784957806572
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785046964033
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785049045388
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785049263216
+      }
+    ],
+    "8.2 撰寫整合測試": [
+      {
+        "executionId": "7fa98590-c485-47f5-823f-8d90149684d0",
+        "chatSessionId": "sess_40d8232d-3b63-4f05-b079-1ea0f78414d7",
+        "timestamp": 1784957806639
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785046964107
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785049270129
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785049459359
+      }
+    ],
+    "9. Final Checkpoint — 完整管線": [
+      {
+        "executionId": "7fa98590-c485-47f5-823f-8d90149684d0",
+        "chatSessionId": "sess_40d8232d-3b63-4f05-b079-1ea0f78414d7",
+        "timestamp": 1784957806720
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785046964196
+      },
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785049465006
+      }
+    ],
+    "1. 建立專案結構與共用工具模組": [
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785047183704
+      }
+    ],
+    "2. 實作 QueryParser (`src/query_parser.py`)": [
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785047764055
+      }
+    ],
+    "4. 實作 Retriever (`src/retriever.py`)": [
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785048572993
+      }
+    ],
+    "6. 實作 Ranker (`src/ranker.py`)": [
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785049262330
+      }
+    ],
+    "8. 串接管線 (`src/pipeline.py`)": [
+      {
+        "executionId": "6744ecea-ddc2-4965-9629-1f642f760c60",
+        "chatSessionId": "sess_7a7fb723-90a0-4273-a6a3-c351814ccac9",
+        "timestamp": 1785049459452
+      }
+    ]
+  }
+}

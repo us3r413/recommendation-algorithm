@@ -70,3 +70,6 @@ Testing/
 
 # Dataset CSV files (raw data, not versioned)
 dataset/*.csv
+
+# Environment variables
+.env

@@ -1,0 +1,4 @@
+# file: C:\Users\林哲緯\Documents\GitHub\recommendation-algorithm\src\query_parser.py
+# hypothesis_version: 6.135.26
+
+['OLLAMA_MODEL', 'content', 'llama3', 'message', 'role', 'system', 'user']

@@ -1,0 +1,4 @@
+# file: C:\Users\林哲緯\Documents\GitHub\recommendation-algorithm\src\utils\tag_parser.py
+# hypothesis_version: 6.135.26
+
+['^薪資>=(\\d+)$', 'cities', 'job_terms', 'salary_min']
