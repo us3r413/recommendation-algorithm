@@ -154,6 +154,10 @@ def querytoRequirement(query: str) -> list[str]:
     """
     expanded = abbreviation_expand(query)
 
+    # Empty query → return empty tags (filters like c0/d0 handle retrieval)
+    if not expanded.strip():
+        return []
+
     for _attempt in range(3):
         try:
             response = ollama.chat(
