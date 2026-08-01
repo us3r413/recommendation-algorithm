@@ -3,8 +3,14 @@ import time
 import pandas as pd
 
 from src.query_parser import querytoRequirement
-from src.retriever import grabFromDatabase
+from src.retriever import grabFromDatabase, _get_db
 from src.ranker import ranking
+
+# Pre-load DuckDB tables into memory (one-time cost at startup)
+print("Loading job database into memory...")
+_t0 = time.perf_counter()
+_get_db()
+print(f"Database ready ({time.perf_counter() - _t0:.2f}s)\n")
 
 # ---------------------------------------------------------------------------
 # User history helpers

@@ -195,8 +195,36 @@ def resolve_d0_codes(d0_codes: list[str]) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
-# Main retrieval function
+# Persistent DuckDB connection with pre-loaded tables (module-level singleton)
 # ---------------------------------------------------------------------------
+
+_db_con: duckdb.DuckDBPyConnection | None = None
+
+
+def _get_db() -> duckdb.DuckDBPyConnection:
+    """Return a persistent in-memory DuckDB connection with pre-loaded tables.
+
+    On first call, reads 職缺.csv and 瀏覽次數.csv into in-memory tables and
+    creates indexes for fast filtering. Subsequent calls reuse the connection.
+    """
+    global _db_con
+    if _db_con is None:
+        _db_con = duckdb.connect()
+        # Load job listings into a persistent in-memory table
+        _db_con.execute(f"""
+            CREATE TABLE jobs AS SELECT * FROM '{JOBS_PATH}'
+        """)
+        # Load popularity scores
+        _db_con.execute(f"""
+            CREATE TABLE popularity AS SELECT * FROM '{VIEWS_PATH}'
+        """)
+        # Create indexes for common filter columns
+        _db_con.execute("CREATE INDEX idx_jobs_city ON jobs(工作城市)")
+        _db_con.execute("CREATE INDEX idx_jobs_salary ON jobs(薪資下限)")
+        _db_con.execute("CREATE INDEX idx_jobs_type ON jobs(職缺屬性)")
+        _db_con.execute("CREATE INDEX idx_jobs_subcategory ON jobs(職務小類)")
+        _db_con.execute("CREATE INDEX idx_popularity_id ON popularity(職缺編號)")
+    return _db_con
 
 def grabFromDatabase(
     tags: list[str],
@@ -225,7 +253,6 @@ def grabFromDatabase(
         A list of dicts, each containing all 職缺.csv columns plus "score".
     """
     classified = classify_tags(tags)
-    expanded_job_terms = semantic_expand(classified["job_terms"])
 
     conditions: list[str] = []
     params: dict = {}
@@ -271,31 +298,43 @@ def grabFromDatabase(
         for i, name in enumerate(d0_names):
             params[f"d0_{i}"] = name
 
-    # Job-title filter (case-insensitive substring via ILIKE)
+    # Job-title filter: each original term generates its own condition (ANDed together)
+    # so results must match ALL terms, not just any one.
     # Only apply if no d0 filter is active (d0 is more precise)
-    if expanded_job_terms and not d0_names:
-        job_likes = " OR ".join(
-            f"j.職務名稱 ILIKE $jt_{i}"
-            for i in range(len(expanded_job_terms))
-        )
-        conditions.append(f"({job_likes})")
-        for i, term in enumerate(expanded_job_terms):
+    if classified["job_terms"] and not d0_names:
+        for i, term in enumerate(classified["job_terms"]):
+            # Get expansions specific to this term
+            term_expanded = semantic_expand([term])
+            expanded_only = [t for t in term_expanded if t != term]
+
+            subconditions = []
+
+            # Expanded terms → exact match on 職務小類
+            if expanded_only:
+                placeholders = ", ".join(
+                    f"$jcat_{i}_{j}" for j in range(len(expanded_only))
+                )
+                subconditions.append(f"j.職務小類 IN ({placeholders})")
+                for j, exp_term in enumerate(expanded_only):
+                    params[f"jcat_{i}_{j}"] = exp_term
+
+            # Original term → ILIKE on 職務名稱 (direct keyword match)
+            subconditions.append(f"j.職務名稱 ILIKE $jt_{i}")
             params[f"jt_{i}"] = f"%{term}%"
+
+            # This term's condition: match subcategory OR title contains term
+            conditions.append(f"({' OR '.join(subconditions)})")
 
     where_clause = ("WHERE " + " AND ".join(conditions)) if conditions else ""
 
     sql = f"""
         SELECT j.*, COALESCE(p.score, 0.0) AS score
-        FROM '{JOBS_PATH}' j
-        LEFT JOIN '{VIEWS_PATH}' p ON j.職缺編號 = p.職缺編號
+        FROM jobs j
+        LEFT JOIN popularity p ON j.職缺編號 = p.職缺編號
         {where_clause}
     """
 
-    con = duckdb.connect()
-    try:
-        result = con.execute(sql, params).fetchall()
-        columns = [desc[0] for desc in con.description]
-    finally:
-        con.close()
-
+    con = _get_db()
+    result = con.execute(sql, params).fetchall()
+    columns = [desc[0] for desc in con.description]
     return [dict(zip(columns, row)) for row in result]
