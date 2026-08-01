@@ -30,58 +30,28 @@ load_dotenv()
 # System prompt
 # ---------------------------------------------------------------------------
 
-SYSTEM_PROMPT = """你是一個台灣求職網站的職缺搜尋標籤提取器。
-使用者位於台灣，資料庫中的職缺全部以中文（繁體）記錄。
-輸入：使用者搜尋字串（已做縮寫展開），可能包含中文、英文或中英混合。
-輸出：只回傳一個 JSON 陣列（array of strings），不要加任何說明文字。
+SYSTEM_PROMPT = """你是台灣求職網站的搜尋標籤提取與語意擴展器。資料庫全中文（繁體）。
+輸出：只回傳 JSON array of strings，無說明文字。
 
-重要：如果使用者輸入英文或其他外語，你必須將其翻譯成對應的繁體中文職務名稱或關鍵字。
-資料庫只有中文，英文關鍵字無法匹配任何職缺。
+規則：
+1. 英文/外語→翻譯成繁體中文
+2. 模糊/類別詞→展開成台灣求職網站職缺標題中會出現的具體品牌名、公司名、同義詞
+3. 地點→完整城市名（台北→台北市, Taipei→台北市）
+4. 薪資→「薪資>=數字」（35k以上→薪資>=35000, 月薪4萬→薪資>=40000）
+5. 具體職稱不需額外擴展
 
-翻譯範例：
-- "frontend engineer" → "前端工程師"
-- "backend" → "後端工程師"
-- "fast food" / "fastfood" → "速食"
-- "cook" / "chef" → "廚師"
-- "marketing" → "行銷"
-- "data analyst" → "資料分析師"
-- "part time" / "part-time" → "兼職"
-- "full time" → "全職"
-- "intern" / "internship" → "實習"
-- "remote" → "遠端"
-- "restaurant" → "餐廳"
-- "waiter" / "waitress" / "server" → "外場服務員"
+語意擴展範例：
+- 速食/fast food → ["麥當勞","肯德基","漢堡王","摩斯","頂呱呱","速食"]
+- 便利商店 → ["7-11","全家","萊爾富","OK超商","便利商店"]
+- 咖啡/coffee → ["星巴克","路易莎","cama","咖啡"]
+- 外送/delivery → ["Uber Eats","foodpanda","外送"]
+- 手搖 → ["五十嵐","清心","迷客夏","可不可","手搖"]
 
-標籤規則：
-- 地點標籤：必須是完整城市名稱，加上「市」或「縣」，例如「台北市」「新北市」「高雄市」「台中市」
-  - 「台北」→「台北市」
-  - 「高雄」→「高雄市」
-  - 「新北」→「新北市」
-  - "Taipei" → "台北市"
-  - "Kaohsiung" → "高雄市"
-  - "Taichung" → "台中市"
-- 薪資標籤：格式必須為「薪資>=數字」，例如「薪資>=35000」
-  - 「35k以上」→「薪資>=35000」
-  - 「月薪4萬」→「薪資>=40000」
-  - k 代表千
-- 職務標籤：必須是繁體中文正式職稱，例如「後端工程師」「前端工程師」「兼職」
-- 每個標籤都是純字串，全部使用繁體中文（地點和薪資標籤除外）
-
-範例：
-輸入：「後端工程師 台北 兼職」
-輸出：["後端工程師", "台北市", "兼職"]
-
-輸入：「前端工程師 35k以上 台北」
-輸出：["前端工程師", "台北市", "薪資>=35000"]
-
-輸入：「fastfood cook」
-輸出：["速食", "廚師"]
-
-輸入：「Taipei frontend engineer part time」
-輸出：["前端工程師", "台北市", "兼職"]
-
-輸入：「data analyst remote」
-輸出：["資料分析師", "遠端"]
+完整範例：
+「fastfood cook」→["麥當勞","肯德基","漢堡王","摩斯","頂呱呱","速食","廚師","餐飲"]
+「便利商店 打工」→["7-11","全家","萊爾富","OK超商","便利商店","兼職"]
+「前端工程師 35k以上 台北」→["前端工程師","台北市","薪資>=35000"]
+「coffee shop barista」→["星巴克","路易莎","cama","咖啡","咖啡師","吧台"]
 """
 
 # ---------------------------------------------------------------------------
@@ -154,6 +124,49 @@ def _post_process_tags(tags: list[str]) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
+# LLM response cache (avoids repeated API calls for identical queries)
+# ---------------------------------------------------------------------------
+
+from functools import lru_cache
+
+
+@lru_cache(maxsize=256)
+def _llm_parse_cached(expanded: str) -> list[str] | None:
+    """Call LLM and cache the result. Returns None on failure (not cached)."""
+    model_id = os.environ.get(
+        "BEDROCK_MODEL_ID", "us.anthropic.claude-sonnet-4-6"
+    )
+    bedrock = boto3.client("bedrock-runtime")
+
+    for _attempt in range(3):
+        try:
+            body = json.dumps({
+                "anthropic_version": "bedrock-2023-05-31",
+                "max_tokens": 150,
+                "temperature": 0,
+                "system": SYSTEM_PROMPT,
+                "messages": [
+                    {"role": "user", "content": expanded},
+                ],
+            })
+            response = bedrock.invoke_model(
+                modelId=model_id,
+                contentType="application/json",
+                accept="application/json",
+                body=body,
+            )
+            response_body = json.loads(response["body"].read())
+            raw = response_body["content"][0]["text"].strip()
+            parsed = json.loads(raw)
+            if (isinstance(parsed, list)
+                    and all(isinstance(t, str) for t in parsed)):
+                return parsed
+        except Exception:
+            pass
+    return None
+
+
+# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
@@ -188,35 +201,9 @@ def querytoRequirement(query: str) -> list[str]:
     if not expanded.strip():
         return []
 
-    model_id = os.environ.get(
-        "BEDROCK_MODEL_ID", "anthropic.claude-3-5-sonnet-20241022-v2:0"
-    )
-    bedrock = boto3.client("bedrock-runtime")
-
-    for _attempt in range(3):
-        try:
-            body = json.dumps({
-                "anthropic_version": "bedrock-2023-05-31",
-                "max_tokens": 256,
-                "system": SYSTEM_PROMPT,
-                "messages": [
-                    {"role": "user", "content": expanded},
-                ],
-            })
-            response = bedrock.invoke_model(
-                modelId=model_id,
-                contentType="application/json",
-                accept="application/json",
-                body=body,
-            )
-            response_body = json.loads(response["body"].read())
-            raw = response_body["content"][0]["text"].strip()
-            parsed = json.loads(raw)
-            if (isinstance(parsed, list)
-                    and all(isinstance(t, str) for t in parsed)):
-                return _post_process_tags(parsed)
-        except Exception:
-            pass  # network error, JSON parse error, schema mismatch → retry
+    result = _llm_parse_cached(expanded)
+    if result is not None:
+        return _post_process_tags(result)
 
     # Fallback: whitespace tokenisation with abbreviation expansion applied
     return _post_process_tags(expanded.split())

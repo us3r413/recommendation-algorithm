@@ -298,37 +298,42 @@ def grabFromDatabase(
         for i, name in enumerate(d0_names):
             params[f"d0_{i}"] = name
 
-    # Job-title filter: each original term generates its own condition (ANDed together)
-    # so results must match ALL terms, not just any one.
+    # Job-title filter: LLM has already done semantic expansion, so each tag
+    # is matched directly via ILIKE on 職務名稱 OR exact match on 職務小類.
+    # relevance_hits counts how many tags each job matches for ranking.
     # Only apply if no d0 filter is active (d0 is more precise)
     if classified["job_terms"] and not d0_names:
+        term_cases = []
+        all_subconditions = []
+
         for i, term in enumerate(classified["job_terms"]):
-            # Get expansions specific to this term
-            term_expanded = semantic_expand([term])
-            expanded_only = [t for t in term_expanded if t != term]
-
-            subconditions = []
-
-            # Expanded terms → exact match on 職務小類
-            if expanded_only:
-                placeholders = ", ".join(
-                    f"$jcat_{i}_{j}" for j in range(len(expanded_only))
-                )
-                subconditions.append(f"j.職務小類 IN ({placeholders})")
-                for j, exp_term in enumerate(expanded_only):
-                    params[f"jcat_{i}_{j}"] = exp_term
-
-            # Original term → ILIKE on 職務名稱 (direct keyword match)
-            subconditions.append(f"j.職務名稱 ILIKE $jt_{i}")
+            # Match either: title contains term OR subcategory equals term
+            subconditions = [
+                f"j.職務名稱 ILIKE $jt_{i}",
+                f"j.職務小類 = $jsc_{i}",
+            ]
             params[f"jt_{i}"] = f"%{term}%"
+            params[f"jsc_{i}"] = term
 
-            # This term's condition: match subcategory OR title contains term
-            conditions.append(f"({' OR '.join(subconditions)})")
+            term_condition = f"({' OR '.join(subconditions)})"
+            all_subconditions.append(term_condition)
+            term_cases.append(f"CASE WHEN {term_condition} THEN 1 ELSE 0 END")
+
+        # WHERE: match ANY term (broad retrieval)
+        conditions.append(f"({' OR '.join(all_subconditions)})")
+
+        # Build relevance_hits as sum of matched terms
+        relevance_expr = " + ".join(term_cases)
+    else:
+        relevance_expr = None
 
     where_clause = ("WHERE " + " AND ".join(conditions)) if conditions else ""
 
+    # Add relevance_hits column if we have job term matching
+    relevance_select = f", ({relevance_expr}) AS relevance_hits" if relevance_expr else ", 0 AS relevance_hits"
+
     sql = f"""
-        SELECT j.*, COALESCE(p.score, 0.0) AS score
+        SELECT j.*, COALESCE(p.score, 0.0) AS score{relevance_select}
         FROM jobs j
         LEFT JOIN popularity p ON j.職缺編號 = p.職缺編號
         {where_clause}

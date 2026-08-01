@@ -31,13 +31,15 @@ def _get_user_feature(talent_no: int) -> dict | None:
 
 
 def _popularity_rank(candidates: list[dict], raw_fields: list[str]) -> list[dict]:
-    """Rank candidates by popularity score descending, tie-break by 職缺最後修改時間 descending.
+    """Rank candidates by relevance_hits (descending) then popularity score, then recency.
 
+    Jobs matching more search terms are ranked higher. Among equal relevance,
+    popularity score breaks ties, then 職缺最後修改時間.
     Returns the top 10 candidates with only raw_fields (score stripped).
     """
     sorted_candidates = sorted(
         candidates,
-        key=lambda c: (c.get("score", 0.0), c.get("職缺最後修改時間", "")),
+        key=lambda c: (c.get("relevance_hits", 0), c.get("score", 0.0), c.get("職缺最後修改時間", "")),
         reverse=True,
     )
     top10 = sorted_candidates[:10]
@@ -81,19 +83,21 @@ def _compute_personal_score(candidate: dict, feature: dict) -> float:
 def _personalised_rank(
     candidates: list[dict], feature: dict, raw_fields: list[str]
 ) -> list[dict]:
-    """Rank candidates by personalised final_score descending.
+    """Rank candidates by relevance first, then personalised final_score.
 
-    final_score = personal_score × 0.7 + normalised_popularity × 0.3
+    Primary sort: relevance_hits (more matched terms = higher priority)
+    Secondary sort: final_score = personal_score × 0.7 + normalised_popularity × 0.3
 
     Normalised popularity = score / max_score (or 0.0 if max_score == 0).
     Returns top 10 with only raw_fields (all computed fields stripped).
     """
     max_score = max((c.get("score", 0.0) for c in candidates), default=0.0)
 
-    def final_score(c: dict) -> float:
+    def final_score(c: dict) -> tuple:
         personal = _compute_personal_score(c, feature)
         pop = (c.get("score", 0.0) / max_score) if max_score > 0.0 else 0.0
-        return personal * 0.7 + pop * 0.3
+        combined = personal * 0.7 + pop * 0.3
+        return (c.get("relevance_hits", 0), combined)
 
     sorted_candidates = sorted(candidates, key=final_score, reverse=True)
     top10 = sorted_candidates[:10]
@@ -117,7 +121,7 @@ def ranking(candidates: list[dict], talent_no: int) -> list[dict]:
     if not candidates:
         return []
 
-    raw_fields = [k for k in candidates[0].keys() if k != "score"]
+    raw_fields = [k for k in candidates[0].keys() if k not in ("score", "relevance_hits")]
 
     if talent_no == 0:
         # Anonymous: use graph-degree ranking if enabled
