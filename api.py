@@ -15,23 +15,40 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Query
 from pydantic import BaseModel, Field
 
-from src.graph_builder import get_graph
 from src.pipeline import recommend
 
 
 # ---------------------------------------------------------------------------
-# Lifespan: preload graph at startup
+# Lifespan: preload graph at startup (skip if using Neptune)
 # ---------------------------------------------------------------------------
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Preload the graph into memory before accepting requests."""
-    print("[API] Preloading graph...")
-    start = time.perf_counter()
-    get_graph()
-    elapsed = time.perf_counter() - start
-    print(f"[API] Graph ready in {elapsed:.1f}s")
+    """Preload the graph into memory before accepting requests.
+
+    When USE_NEPTUNE=true, skip local graph build — queries go to Neptune directly.
+    """
+    import os
+    use_neptune = os.environ.get("USE_NEPTUNE", "false").lower() in ("true", "1", "yes")
+
+    if use_neptune:
+        print("[API] USE_NEPTUNE=true — skipping local graph preload (using Neptune)")
+        # Verify Neptune connection
+        try:
+            from src.neptune_client import get_traversal
+            g = get_traversal()
+            count = g.V().count().next()
+            print(f"[API] Neptune connected — {count:,} vertices")
+        except Exception as e:
+            print(f"[API] WARNING: Neptune unavailable ({e}) — graph ranking will fall back to popularity")
+    else:
+        from src.graph_builder import get_graph
+        print("[API] Preloading local graph...")
+        start = time.perf_counter()
+        get_graph()
+        elapsed = time.perf_counter() - start
+        print(f"[API] Graph ready in {elapsed:.1f}s")
     yield
 
 
