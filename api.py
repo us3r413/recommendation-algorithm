@@ -96,6 +96,7 @@ class RecommendResponse(BaseModel):
 
 
 @app.post("/recommend", response_model=RecommendResponse)
+@app.post("/api/v1/jobs/search", response_model=RecommendResponse)
 async def recommend_endpoint(req: RecommendRequest):
     """Return top 10 recommended job listings for the given query."""
     start = time.perf_counter()
