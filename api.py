@@ -66,13 +66,9 @@ app = FastAPI(
 
 
 class RecommendRequest(BaseModel):
-    request_id: str = Field(default="req_0001", description="請求 ID")
-    query: str = Field(default="", description="搜尋查詢字串", examples=["台北 前端工程師 35k以上"])
-    talent_no: int = Field(default=0, description="用戶 ID（0 = 匿名）", examples=[0, 12345])
-    c0: list[str] | None = Field(default=None, alias="location_code", description="城市代碼列表", examples=[["100100", "100200"]])
-    d0: list[str] | None = Field(default=None, alias="duty_code", description="職務類別代碼列表", examples=[["140214", "140213"]])
-
-    model_config = {"populate_by_name": True}
+    query: str = Field(default="", description="搜尋查詢字串", examples=["後端工程師"])
+    location_code: list[str] | None = Field(default=None, description="城市代碼列表", examples=[["100100", "100200"]])
+    duty_code: list[str] | None = Field(default=None, description="職務類別代碼列表", examples=[["140214", "140213"]])
 
 
 class JobResultItem(BaseModel):
@@ -96,9 +92,9 @@ async def recommend_endpoint(req: RecommendRequest):
     """Return top 10 recommended job listings for the given query."""
     results = recommend(
         query=req.query,
-        talent_no=req.talent_no,
-        c0=req.c0,
-        d0=req.d0,
+        talent_no=0,
+        c0=req.location_code,
+        d0=req.duty_code,
     )
 
     # Format output: [{"job_id": "123", "rank": 1}, ...]
@@ -108,7 +104,7 @@ async def recommend_endpoint(req: RecommendRequest):
     ]
 
     return RecommendResponse(
-        request_id=req.request_id,
+        request_id="req_0001",
         result=result_items,
     )
 
