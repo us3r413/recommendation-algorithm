@@ -200,6 +200,9 @@ def build_graph_networkx() -> nx.DiGraph:
     print("[GraphBuilder] Loading events for filtering...")
     events = pd.read_csv(EVENTS_PATH)
     events = events[events["talentNo"].notna() & (events["talentNo"] != 0)]
+    # Exclude 2026-06-06 data (held out for evaluation)
+    events["event_time"] = pd.to_datetime(events["event_time"], errors="coerce")
+    events = events[events["event_time"].dt.date != pd.Timestamp("2026-06-06").date()]
     event_job_ids = set(events["job_id"].dropna().astype(int).unique())
     jobs = jobs[jobs["職缺編號"].isin(event_job_ids)].copy()
     print(f"  {len(jobs):,} jobs with interactions")
@@ -382,6 +385,9 @@ def build_graph_neptune() -> None:
     )
     events = pd.read_csv(EVENTS_PATH)
     events = events[events["talentNo"].notna() & (events["talentNo"] != 0)]
+    # Exclude 2026-06-06 data (held out for evaluation)
+    events["event_time"] = pd.to_datetime(events["event_time"], errors="coerce")
+    events = events[events["event_time"].dt.date != pd.Timestamp("2026-06-06").date()]
     event_job_ids = set(events["job_id"].dropna().astype(int).unique())
     jobs = jobs[jobs["職缺編號"].isin(event_job_ids)].copy()
 
