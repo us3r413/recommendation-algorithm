@@ -29,6 +29,7 @@ Top 10 職缺
 
 - 標籤分類：城市 / 薪資門檻 / 職缺屬性（全職/兼職）/ 職務關鍵字
 - 透過 `職務對照表.csv` 的 CodeAlike 欄位進行語意擴展（例如：前端工程師 → 軟體工程師、網站程式設計師）
+- 支援 `c0`（城市代碼）和 `d0`（職務類別代碼）作為額外篩選條件，可直接對應 userSearchLog 欄位
 - 使用 DuckDB 對 `職缺.csv`（~100 萬筆）執行參數化 SQL 查詢
 - LEFT JOIN `瀏覽次數.csv` 為每筆候選職缺附加熱門分數
 
@@ -42,11 +43,10 @@ Top 10 職缺
 
 ## 使用的 LLM 模型
 
-- **Ollama**（本地推論）
-- 預設模型：`llama3`（可在 `.env` 檔案中透過 `OLLAMA_MODEL` 變數覆蓋）
-- 建議使用非推理型模型（如 `qwen2.5:7b`、`llama3`），推理型模型（如 `deepseek-r1`）延遲較高
+- **AWS Bedrock**（Claude）
+- 預設模型：`anthropic.claude-3-5-sonnet-20241022-v2:0`（可在 `.env` 中透過 `BEDROCK_MODEL_ID` 變數覆蓋）
 - 用途：將使用者搜尋字串解析為結構化標籤（城市、薪資、職務名稱）
-- 若 LLM 不可用或回應格式錯誤，系統會自動 fallback 至規則式解析
+- 若 LLM 不可用或回應格式錯誤，系統會自動 fallback 至規則式解析（空白分詞 + 後處理）
 
 ## 執行步驟
 
@@ -59,30 +59,26 @@ pip install -r requirements.txt
 主要套件：
 - `duckdb` — 高速 SQL 查詢引擎
 - `pandas` — 資料處理
-- `ollama` — LLM Python SDK
+- `boto3` — AWS SDK（存取 Bedrock LLM）
 - `python-dotenv` — 環境變數載入（讀取 `.env`）
+- `hypothesis` — 屬性測試框架
 
-### 2. 安裝並啟動 Ollama
-
-前往 [ollama.com](https://ollama.com) 下載安裝 Ollama，然後拉取模型：
-
-```bash
-ollama pull llama3
-```
-
-確認 Ollama 服務正在運行（安裝後預設會自動啟動）。
-
-### 3. 設定環境變數
+### 2. 設定環境變數
 
 在專案根目錄建立 `.env` 檔案：
 
 ```env
-OLLAMA_MODEL=llama3
+BEDROCK_MODEL_ID=anthropic.claude-3-5-sonnet-20241022-v2:0
+AWS_DEFAULT_REGION=us-west-2
+AWS_ACCESS_KEY_ID=your-access-key
+AWS_SECRET_ACCESS_KEY=your-secret-key
+AWS_SESSION_TOKEN=your-session-token
 ```
 
-可替換為你已安裝的任何 Ollama 模型（如 `qwen2.5:7b`、`deepseek-r1:7b`）。
+需要有效的 AWS 憑證（具備 `bedrock-runtime:InvokeModel` 權限）。
+可替換 `BEDROCK_MODEL_ID` 為其他 Bedrock 支援的 Claude 模型。
 
-### 4. 準備資料集
+### 3. 準備資料集
 
 確保 `dataset/` 資料夾中包含以下原始 CSV 檔案：
 
@@ -92,7 +88,7 @@ OLLAMA_MODEL=llama3
 - `職缺瀏覽_20260601_20260607.csv` — 瀏覽行為紀錄
 - `主動應徵_0601-0607.csv` — 應徵行為紀錄
 
-### 5. 產生衍生資料表
+### 4. 產生衍生資料表
 
 ```bash
 python dataset/genViewCount.py
@@ -104,42 +100,53 @@ python dataset/userAnalysis.py
 - `dataset/userBehaviorFeature.csv` — 用戶偏好特徵
 - `dataset/userBehaviorEvents.csv` — 用戶行為事件紀錄
 
-### 6. 執行推薦引擎
+### 5. 執行推薦引擎
 
 ```bash
 python main.py
 ```
 
-### 7. 自訂查詢
-
-編輯 `main.py` 中的查詢參數：
+### 6. 自訂查詢
 
 ```python
 from src.pipeline import recommend
 
-# 匿名用戶
+# 匿名用戶 — 純文字查詢
 results = recommend("台北 前端工程師 35k以上", talent_no=0)
 
 # 登入用戶（帶個人化排序）
 results = recommend("後端 pt工作", talent_no=12345)
+
+# 搭配 c0（城市代碼）和 d0（職務代碼）— 模擬 userSearchLog 重播
+results = recommend("", talent_no=0, c0=["100100"], d0=["140214", "140213"])
 ```
 
 ## 專案結構
 
 ```
 recommendation-algorithm/
-├── dataset/              # 原始資料 + 衍生資料 + ETL 腳本
-│   ├── genViewCount.py   # 產生瀏覽次數.csv
-│   └── userAnalysis.py   # 產生用戶行為特徵
-├── src/                  # 核心程式碼
-│   ├── pipeline.py       # 三階段 Pipeline 入口
-│   ├── query_parser.py   # 第一階段：LLM 語意解析
-│   ├── retriever.py      # 第二階段：DuckDB 檢索
-│   ├── ranker.py         # 第三階段：排序
-│   └── utils/            # 工具模組（縮寫展開、標籤分類）
-├── main.py               # 執行入口
-├── .env                  # 環境變數設定（git-ignored）
-├── requirements.txt      # Python 相依套件
+├── dataset/                  # 原始資料 + 衍生資料 + ETL 腳本
+│   ├── genViewCount.py       # 產生瀏覽次數.csv
+│   ├── userAnalysis.py       # 產生用戶行為特徵
+│   └── README.md             # 資料表 schema 說明
+├── src/                      # 核心程式碼
+│   ├── __init__.py
+│   ├── pipeline.py           # 三階段 Pipeline 入口 (recommend())
+│   ├── query_parser.py       # 第一階段：Bedrock LLM 語意解析
+│   ├── retriever.py          # 第二階段：DuckDB 檢索 + 語意擴展
+│   ├── ranker.py             # 第三階段：排序（熱門 / 個人化）
+│   ├── utils/                # 工具模組
+│   │   ├── abbreviations.py  # 縮寫展開規則
+│   │   └── tag_parser.py     # 標籤分類（城市/薪資/職類/關鍵字）
+│   └── tests/                # 單元測試
+│       ├── test_pipeline.py
+│       ├── test_query_parser.py
+│       ├── test_ranker.py
+│       └── test_retriever.py
+├── main.py                   # 執行入口（debug 模式，含計時輸出）
+├── conftest.py               # pytest 共用 fixtures
+├── .env                      # 環境變數設定（git-ignored）
+├── requirements.txt          # Python 相依套件
 └── README.md
 ```
 
@@ -149,4 +156,16 @@ recommendation-algorithm/
 
 | 變數名稱 | 說明 | 預設值 |
 |----------|------|--------|
-| `OLLAMA_MODEL` | Ollama 使用的模型名稱 | `llama3` |
+| `BEDROCK_MODEL_ID` | Bedrock 模型 ID | `anthropic.claude-3-5-sonnet-20241022-v2:0` |
+| `AWS_DEFAULT_REGION` | AWS 區域 | `us-west-2` |
+| `AWS_ACCESS_KEY_ID` | AWS Access Key | （必填） |
+| `AWS_SECRET_ACCESS_KEY` | AWS Secret Key | （必填） |
+| `AWS_SESSION_TOKEN` | AWS Session Token | （臨時憑證時必填） |
+
+## 執行測試
+
+```bash
+pytest
+```
+
+測試位於 `src/tests/` 及 `src/utils/`，涵蓋各階段的單元測試與屬性測試。
