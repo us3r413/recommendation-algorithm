@@ -1,7 +1,18 @@
+import os
+
 import pandas as pd
+from dotenv import load_dotenv
+
+load_dotenv()
 
 FEATURES_PATH = "dataset/userBehaviorFeature.csv"
 _features_cache: pd.DataFrame | None = None
+
+# Graph RAG toggle: set GRAPH_FOR_SIGNED_IN_USER=true in .env to enable graph-based ranking
+USE_GRAPH_RAG = os.environ.get("GRAPH_FOR_SIGNED_IN_USER", "false").lower() in ("true", "1", "yes")
+
+# Graph for anonymous users: use graph-degree scoring instead of pure popularity
+GRAPH_FOR_ANONYMOUS = os.environ.get("GRAPH_FOR_ANONYMOUS_USER", "false").lower() in ("true", "1", "yes")
 
 
 def _get_user_feature(talent_no: int) -> dict | None:
@@ -92,11 +103,14 @@ def _personalised_rank(
 def ranking(candidates: list[dict], talent_no: int) -> list[dict]:
     """Route candidates to the appropriate ranking path.
 
+    Routing logic:
     - Empty candidates → return []
     - talent_no == 0 → popularity ranking
+    - USE_GRAPH_RAG=true and talent_no ≠ 0 → graph-based ranking (Neptune)
+      - Falls back to feature-based or popularity if Neptune fails
     - No matching feature row → popularity ranking (treat as cold-start)
     - is_cold_start == True → popularity ranking
-    - Otherwise → personalised ranking
+    - Otherwise → personalised feature-based ranking
 
     Returns at most 10 items with computed fields stripped.
     """
@@ -106,7 +120,23 @@ def ranking(candidates: list[dict], talent_no: int) -> list[dict]:
     raw_fields = [k for k in candidates[0].keys() if k != "score"]
 
     if talent_no == 0:
+        # Anonymous: use graph-degree ranking if enabled
+        if GRAPH_FOR_ANONYMOUS:
+            try:
+                from src.graph_ranker import graph_ranking_anonymous
+                return graph_ranking_anonymous(candidates)
+            except Exception:
+                pass
         return _popularity_rank(candidates, raw_fields)
+
+    # Graph RAG path: use Neptune collaborative filtering for signed-in users
+    if USE_GRAPH_RAG:
+        try:
+            from src.graph_ranker import graph_ranking
+            return graph_ranking(candidates, talent_no)
+        except Exception:
+            # Neptune unavailable or import error — fall through to feature-based
+            pass
 
     feature = _get_user_feature(talent_no)
     if feature is None or feature.get("is_cold_start", True):
