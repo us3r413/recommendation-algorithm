@@ -34,31 +34,31 @@
 │        │                                                             │
 │        ▼                                                             │
 │   ┌──────────────────────────┐                                       │
-│   │  querytoRequirement()    │  ← AWS Bedrock (Claude)               │
+│   │  querytoRequirement()    │  ← AWS Bedrock (Claude Sonnet 4.6)    │
 │   │  • 縮寫展開 (rule-based) │  ← src/utils/abbreviations.py        │
-│   │  • LLM 語意解析          │                                       │
+│   │  • LLM 語意解析+語意擴展 │  ← 翻譯、品牌展開、同義詞           │
+│   │  • LRU 快取 (256 筆)     │  ← 重複查詢 ~0ms                     │
 │   │  • 後處理: 城市正規化     │                                       │
 │   │  • Fallback: 空白分詞    │                                       │
 │   └────────────┬─────────────┘                                       │
 │                │ tags: list[str]                                      │
 │                ▼                                                      │
 │   ┌──────────────────────────┐   ┌────────────────────┐             │
-│   │  grabFromDatabase()      │──▶│ 職務對照表.csv      │ CodeAlike   │
+│   │  grabFromDatabase()      │──▶│ jobs (in-memory)    │ DuckDB      │
 │   │  • 標籤分類              │   └────────────────────┘             │
-│   │  • 語意擴展              │   ┌────────────────────┐             │
-│   │  • DuckDB SQL 篩選       │──▶│ 職缺.csv (~1M rows)│             │
-│   │  • LEFT JOIN 熱門分數    │   └────────────────────┘             │
-│   │  • c0/d0 代碼解析        │   ┌────────────────────┐             │
-│   └────────────┬─────────────┘──▶│ 瀏覽次數.csv       │             │
-│                │                  └────────────────────┘             │
-│                │ candidates: list[dict]                               │
+│   │  • ILIKE + 職務小類匹配  │   ┌────────────────────┐             │
+│   │  • relevance_hits 計數   │──▶│ popularity          │ DuckDB      │
+│   │  • c0/d0 代碼解析        │   └────────────────────┘             │
+│   └────────────┬─────────────┘                                       │
+│                │ candidates: list[dict] (with relevance_hits)         │
 │                ▼                                                      │
 │   ┌──────────────────────────┐   ┌────────────────────────────┐     │
 │   │  ranking()               │──▶│ userBehaviorFeature.csv     │     │
-│   │  • talentNo=0 → 熱門排序 │   └────────────────────────────┘     │
-│   │  • cold-start → 熱門排序 │   ┌────────────────────────────┐     │
-│   │  • 正常用戶 → 個人化排序  │──▶│ graph_cache.pkl (optional) │     │
-│   │  • Graph toggle → 圖排序 │   └────────────────────────────┘     │
+│   │  • relevance_hits 優先   │   └────────────────────────────┘     │
+│   │  • talentNo=0 → 熱門排序 │   ┌────────────────────────────┐     │
+│   │  • cold-start → 熱門排序 │──▶│ graph_cache.pkl (optional) │     │
+│   │  • 正常用戶 → 個人化排序  │   └────────────────────────────┘     │
+│   │  • Graph toggle → 圖排序 │                                       │
 │   └────────────┬─────────────┘                                       │
 │                │                                                      │
 │                ▼                                                      │
@@ -71,23 +71,27 @@
 
 - 縮寫展開：規則式替換（例如 `pt` → 兼職、`fe` → 前端工程師、`35k以上` → 薪資>=35000）
 - 呼叫 AWS Bedrock Claude 將自然語言查詢解析為結構化標籤
+- **語意擴展**：模糊/類別性關鍵字由 LLM 展開為具體品牌名與同義詞（例如 `速食` → 麥當勞、肯德基、漢堡王…）
+- **多語言支援**：英文輸入自動翻譯為繁體中文（例如 `fastfood cook` → 麥當勞、廚師…）
 - 後處理：城市名稱正規化（台北 → 台北市）、薪資格式統一
+- **LRU 快取**（256 筆）：相同查詢第二次起跳過 LLM，回應時間 ~0ms
 - 若 LLM 回應格式錯誤，最多重試 3 次後 fallback 為空白分詞
 
 ### 第二階段：資料庫檢索（grabFromDatabase）
 
 - 標籤分類：城市 / 薪資門檻 / 職缺屬性（全職/兼職）/ 職務關鍵字
-- 透過 `職務對照表.csv` 的 CodeAlike 欄位進行語意擴展
+- LLM 已完成語意擴展，檢索直接使用 ILIKE + 職務小類精確匹配
+- **relevance_hits 計數**：統計每筆候選職缺匹配的標籤數量，供排序階段使用
 - 支援 `c0`（城市代碼）和 `d0`（職務類別代碼）額外篩選條件
-- 使用 DuckDB 對 `職缺.csv`（~100 萬筆）執行參數化 SQL 查詢
+- **DuckDB 預載入記憶體**：啟動時將 CSV 載入為 in-memory table + index，查詢延遲 <1s
 - LEFT JOIN `瀏覽次數.csv` 為每筆候選職缺附加熱門分數
 
 ### 第三階段：排序（ranking）
 
-- **匿名用戶**（talentNo = 0）：依 `瀏覽次數.score` 熱門度排序
+- **匿名用戶**（talentNo = 0）：依 `relevance_hits`（標籤匹配數）優先，再依熱門度排序
 - **登入用戶**（talentNo ≠ 0）：
   - 冷啟動（歷史事件 < 3）：退回熱門排序
-  - 正常用戶：`final_score = personal_score × 0.7 + popularity_score × 0.3`
+  - 正常用戶：先依 `relevance_hits` 排序，同匹配數內依 `final_score = personal_score × 0.7 + popularity_score × 0.3`
     - `personal_score = 地點匹配 × 0.4 + 職類匹配 × 0.4 + 薪資匹配 × 0.2`
 
 ---
@@ -247,7 +251,7 @@ pip install -r requirements.txt
 在專案根目錄建立 `.env` 檔案：
 
 ```env
-BEDROCK_MODEL_ID=anthropic.claude-3-5-sonnet-20241022-v2:0
+BEDROCK_MODEL_ID=us.anthropic.claude-sonnet-4-6
 AWS_DEFAULT_REGION=us-west-2
 AWS_ACCESS_KEY_ID=your-access-key
 AWS_SECRET_ACCESS_KEY=your-secret-key
@@ -260,7 +264,7 @@ GRAPH_FOR_ANONYMOUS_USER=false
 
 | 變數名稱 | 說明 | 預設值 |
 |----------|------|--------|
-| `BEDROCK_MODEL_ID` | Bedrock 模型 ID | `anthropic.claude-3-5-sonnet-20241022-v2:0` |
+| `BEDROCK_MODEL_ID` | Bedrock 模型 ID（需支援 cross-region inference） | `us.anthropic.claude-sonnet-4-6` |
 | `AWS_DEFAULT_REGION` | AWS 區域 | `us-west-2` |
 | `AWS_ACCESS_KEY_ID` | AWS Access Key | （必填） |
 | `AWS_SECRET_ACCESS_KEY` | AWS Secret Key | （必填） |
@@ -413,10 +417,11 @@ pytest
 
 | 階段 | 典型延遲 | 備註 |
 |------|----------|------|
-| Stage 1 (querytoRequirement) | 1–3s | 受 Bedrock API 延遲影響 |
-| Stage 2 (grabFromDatabase) | 50–200ms | DuckDB 查詢 ~1M 列 CSV |
-| Stage 3 (ranking) | <10ms | 純記憶體排序 |
-| 端到端 | 1–3.5s | 瓶頸在 LLM 呼叫 |
+| Stage 1 (querytoRequirement) | 2–4s（首次）/ ~0ms（快取命中） | LRU 快取 256 筆，重複查詢即時回應 |
+| Stage 2 (grabFromDatabase) | 0.5–2s | DuckDB in-memory table + index |
+| Stage 3 (ranking) | <50ms | 含 relevance_hits 排序 |
+| 端到端（首次） | 3–6s | 瓶頸在 LLM 呼叫 |
+| 端到端（快取命中） | 0.5–2s | 跳過 LLM |
 
 ---
 
@@ -434,8 +439,8 @@ pytest
 
 | 元件 | 模型 / 版本 | 用途 |
 |------|-------------|------|
-| LLM | `anthropic.claude-3-5-sonnet-20241022-v2:0` (via AWS Bedrock) | 查詢語意解析 |
-| 查詢引擎 | DuckDB 1.3.0 | SQL 篩選 ~1M 職缺 |
+| LLM | `us.anthropic.claude-sonnet-4-6` (via AWS Bedrock, cross-region) | 查詢語意解析 + 語意擴展 |
+| 查詢引擎 | DuckDB 1.3.0 | SQL 篩選 ~1M 職缺（in-memory） |
 | 圖引擎 | networkx 3.4.2 | 用戶-職缺互動圖（可選） |
 
 ### 排序超參數

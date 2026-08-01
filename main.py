@@ -119,19 +119,19 @@ if USE_GRAPH_RAG or GRAPH_FOR_ANONYMOUS:
     print()
 
 # # --- Example 1: Anonymous user, natural language query ---
-# debug_recommend("台北 前端工程師 35k以上", talent_no=0)
+#debug_recommend("台北 前端工程師 35k以上", talent_no=0)
 
 # # --- Example 2: Anonymous user, broader query with city filter ---
-# debug_recommend("行銷企劃", talent_no=0, c0=["100100"])
+debug_recommend("行銷企劃", talent_no=0, c0=["100100"])
 
 # # --- Example 3: Anonymous user, job category filter only ---
 # debug_recommend("", talent_no=0, c0=["100100", "100200"], d0=["140214", "140213"])
 
 # # --- Example 4: Anonymous user, keyword + city ---
-# debug_recommend("台中 兼職 門市", talent_no=0)
+#debug_recommend("在家工作", talent_no=0)
 
 # --- Example 5: Signed-in user, personalised ranking ---
-debug_recommend("fastfood cook", talent_no=0)
+#debug_recommend("software engineer", talent_no=0)
 
 # --- Example 6: Signed-in user, broader query ---
 #debug_recommend("行銷企劃", talent_no=143)
