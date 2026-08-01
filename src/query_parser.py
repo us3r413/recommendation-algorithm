@@ -39,11 +39,32 @@ SYSTEM_PROMPT = """你是台灣求職網站的搜尋標籤提取與語意擴展�
 3. 具體職稱（如「前端工程師」「軟體工程師」「會計師」）→直接保留，不需擴展
 4. 地點→完整城市名（台北→台北市, Taipei→台北市）
 5. 薪資→「薪資>=數字」（35k以上→薪資>=35000, 月薪4萬→薪資>=40000）
+6. 結合篩選條件的語意理解（見下方說明）
 
 判斷是否擴展的原則：
 - 需要擴展：產業/業態類別詞（速食、便利商店、咖啡廳、外送平台、電商）
 - 不需擴展：明確職稱（前端工程師、後端工程師、資料分析師、UI設計師、會計）
 - 不需擴展：明確公司名（台積電、Google、鴻海）
+
+篩選條件的語意理解：
+使用者搜尋時可能同時套用「城市篩選」或「職務類別篩選」。當提供這些篩選條件時，
+你必須結合搜尋文字+篩選條件來理解使用者的真正意圖，產出語意相符的標籤。
+- 不要重複輸出篩選條件本身（系統會自動套用），只輸出搜尋文字的語意擴展結果
+- 但要讓擴展結果與篩選條件的語意一致
+
+範例：
+- 搜尋「越南」＋職務篩選=[軟體工程師]
+  意圖：在越南工作的軟體工程師職缺（海外工作）
+  → ["越南","海外","外派","東南亞"] （不要輸出工廠、作業員等無關標籤）
+- 搜尋「日本」＋職務篩選=[餐飲服務人員]
+  意圖：在日本的餐飲工作
+  → ["日本","海外","東北亞","外派"]
+- 搜尋「台積電」＋城市篩選=[台南市]
+  意圖：台積電在台南的職缺
+  → ["台積電","TSMC"]
+- 搜尋「兼職」＋職務篩選=[門市/店員/專櫃人員]
+  意圖：門市相關的兼職工作
+  → ["兼職","打工","計時"]
 
 語意擴展範例（僅限模糊類別詞）：
 - 速食/fast food → ["麥當勞","肯德基","漢堡王","摩斯","頂呱呱","速食"]
@@ -144,12 +165,24 @@ from functools import lru_cache
 
 
 @lru_cache(maxsize=256)
-def _llm_parse_cached(expanded: str) -> list[str] | None:
-    """Call LLM and cache the result. Returns None on failure (not cached)."""
+def _llm_parse_cached(expanded: str, filter_context: str = "") -> list[str] | None:
+    """Call LLM and cache the result. Returns None on failure (not cached).
+
+    Args:
+        expanded: The abbreviation-expanded query string.
+        filter_context: Optional string describing active filters (city/category)
+                        to help the LLM understand user intent.
+    """
     model_id = os.environ.get(
         "BEDROCK_MODEL_ID", "us.anthropic.claude-sonnet-4-6"
     )
     bedrock = boto3.client("bedrock-runtime")
+
+    # Build user message with optional filter context
+    if filter_context:
+        user_message = f"搜尋文字：{expanded}\n{filter_context}"
+    else:
+        user_message = expanded
 
     for _attempt in range(3):
         try:
@@ -159,7 +192,7 @@ def _llm_parse_cached(expanded: str) -> list[str] | None:
                 "temperature": 0,
                 "system": SYSTEM_PROMPT,
                 "messages": [
-                    {"role": "user", "content": expanded},
+                    {"role": "user", "content": user_message},
                 ],
             })
             response = bedrock.invoke_model(
@@ -174,8 +207,9 @@ def _llm_parse_cached(expanded: str) -> list[str] | None:
             if (isinstance(parsed, list)
                     and all(isinstance(t, str) for t in parsed)):
                 return parsed
-        except Exception:
-            pass
+        except Exception as e:
+            import logging
+            logging.debug(f"query_parser attempt {_attempt+1}: {type(e).__name__}: {e}")
     return None
 
 
@@ -183,19 +217,30 @@ def _llm_parse_cached(expanded: str) -> list[str] | None:
 # Public API
 # ---------------------------------------------------------------------------
 
-def querytoRequirement(query: str) -> list[str]:
+def querytoRequirement(
+    query: str,
+    city_filters: list[str] | None = None,
+    category_filters: list[str] | None = None,
+) -> list[str]:
     """Parse a free-text search query into a flat list of tag strings.
 
-    Performs abbreviation expansion first, then calls the LLM via the ollama
-    SDK.  The LLM is expected to return a JSON array of plain strings.  If the
+    Performs abbreviation expansion first, then calls the LLM via AWS Bedrock.
+    The LLM is expected to return a JSON array of plain strings.  If the
     response fails JSON parsing or schema validation, the call is retried up to
     3 times in total.  After all retries are exhausted, the function falls back
     to rule-based parsing of the abbreviation-expanded query.
+
+    When city_filters or category_filters are provided, they are included as
+    context in the LLM prompt so the model can understand the user's intent
+    (e.g. "越南" + category_filters=["軟體工程師"] → overseas software jobs,
+    not factory work).
 
     All results are post-processed to normalise city names and salary formats.
 
     Args:
         query: A raw UTF-8 search string entered by the user.
+        city_filters: Optional resolved city name strings from c0 codes.
+        category_filters: Optional resolved category name strings from d0 codes.
 
     Returns:
         A ``list[str]`` of tag strings.  Every element is a plain ``str``
@@ -214,7 +259,15 @@ def querytoRequirement(query: str) -> list[str]:
     if not expanded.strip():
         return []
 
-    result = _llm_parse_cached(expanded)
+    # Build filter context string for the LLM
+    filter_parts = []
+    if city_filters:
+        filter_parts.append(f"城市篩選={city_filters}")
+    if category_filters:
+        filter_parts.append(f"職務篩選={category_filters}")
+    filter_context = "\n".join(filter_parts)
+
+    result = _llm_parse_cached(expanded, filter_context)
     if result is not None:
         return _post_process_tags(result)
 

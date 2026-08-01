@@ -8,7 +8,7 @@ Chains the three pipeline stages:
 """
 
 from src.query_parser import querytoRequirement
-from src.retriever import grabFromDatabase
+from src.retriever import grabFromDatabase, resolve_c0_codes, resolve_d0_codes
 from src.ranker import ranking
 
 
@@ -37,6 +37,10 @@ def recommend(
     Returns:
         A list of at most 10 dicts, each representing a job listing.
     """
-    tags = querytoRequirement(query)
+    # Resolve filter codes to human-readable names for LLM context
+    city_filters = resolve_c0_codes(c0) if c0 else None
+    category_filters = resolve_d0_codes(d0) if d0 else None
+
+    tags = querytoRequirement(query, city_filters=city_filters, category_filters=category_filters)
     candidates = grabFromDatabase(tags, c0=c0, d0=d0)
     return ranking(candidates, talent_no)

@@ -79,7 +79,13 @@ def debug_recommend(query: str, talent_no: int, c0=None, d0=None):
 
     # Stage 1
     t0 = time.perf_counter()
-    tags = querytoRequirement(query)
+
+    # Resolve filter codes to names for LLM context
+    from src.retriever import resolve_c0_codes, resolve_d0_codes
+    city_filters = resolve_c0_codes(c0) if c0 else None
+    category_filters = resolve_d0_codes(d0) if d0 else None
+
+    tags = querytoRequirement(query, city_filters=city_filters, category_filters=category_filters)
     t1 = time.perf_counter()
     print(f"\n[Stage 1] querytoRequirement → tags:  ({t1-t0:.2f}s)")
     print(f"  {tags}")
@@ -122,13 +128,13 @@ if USE_GRAPH_RAG or GRAPH_FOR_ANONYMOUS:
 #debug_recommend("台北 前端工程師 35k以上", talent_no=0)
 
 # # --- Example 2: Anonymous user, broader query with city filter ---
-debug_recommend("人資", talent_no=1499)
+debug_recommend("fastfood chef", talent_no=0)
 
 # # --- Example 3: Anonymous user, job category filter only ---
-# debug_recommend("", talent_no=0, c0=["100100", "100200"], d0=["140214", "140213"])
+debug_recommend("越南文相關單位", talent_no=52059406, c0=["100100", "100200"], d0=["140214", "140213"])
 
 # # --- Example 4: Anonymous user, keyword + city ---
-#debug_recommend("在家工作", talent_no=0)
+debug_recommend("現領", talent_no=47775983)
 
 # --- Example 5: Signed-in user, personalised ranking ---
 #debug_recommend("software engineer", talent_no=0)
