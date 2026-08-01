@@ -463,12 +463,12 @@ def build_graph_neptune() -> None:
         # LOCATED_IN edge
         if city_val:
             cid = city_id(city_val)
-            g.V(jnode).addE("LOCATED_IN").to(AnonymousTraversal.V(cid)).next()
+            g.V(jnode).as_("j").V(cid).addE("LOCATED_IN").from_("j").next()
 
         # IN_CATEGORY edge
         if cat_val:
             catid = category_id(cat_val)
-            g.V(jnode).addE("IN_CATEGORY").to(AnonymousTraversal.V(catid)).next()
+            g.V(jnode).as_("j").V(catid).addE("IN_CATEGORY").from_("j").next()
 
         job_count += 1
         if job_count % 1000 == 0:
@@ -505,7 +505,8 @@ def build_graph_neptune() -> None:
                     continue
                 sid = skill_id(s)
                 try:
-                    g.V(jnode).addE("REQUIRES").to(AnonymousTraversal.V(sid)).property("confidence", confidence).next()
+                    # Safe edge creation: only add edge if BOTH vertices exist
+                    g.V(jnode).as_("j").V(sid).addE("REQUIRES").from_("j").property("confidence", confidence).next()
                     requires_count += 1
                 except Exception:
                     pass
@@ -556,7 +557,7 @@ def build_graph_neptune() -> None:
             skipped_interactions += 1
             continue
         try:
-            g.V(uid).addE(edge_label).to(AnonymousTraversal.V(jnode)).property("weight", weight).next()
+            g.V(uid).as_("u").V(jnode).addE(edge_label).from_("u").property("weight", weight).next()
             interaction_count += 1
         except Exception:
             pass
