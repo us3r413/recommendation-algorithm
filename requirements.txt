@@ -6,3 +6,4 @@ python-dotenv==1.2.2
 networkx==3.4.2
 fastapi==0.115.6
 uvicorn==0.34.0
+gremlinpython==3.7.3
