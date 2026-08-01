@@ -125,13 +125,13 @@ if USE_GRAPH_RAG or GRAPH_FOR_ANONYMOUS:
 # debug_recommend("台中 兼職 門市", talent_no=0)
 
 # --- Example 5: Signed-in user, personalised ranking ---
-debug_recommend("台北 前端工程師", talent_no=138)
+debug_recommend("fastfood cook", talent_no=0)
 
 # --- Example 6: Signed-in user, broader query ---
-debug_recommend("行銷企劃", talent_no=143)
+#debug_recommend("行銷企劃", talent_no=143)
 
 # --- Example 7: Signed-in user, different preference ---
-debug_recommend("台中 兼職 門市", talent_no=301)
+#debug_recommend("台中 兼職 門市", talent_no=301)
 
 # --- Example 8: Signed-in user, with city filter ---
-debug_recommend("軟體工程師", talent_no=138, c0=["100100"])
+#debug_recommend("軟體工程師", talent_no=138, c0=["100100"])

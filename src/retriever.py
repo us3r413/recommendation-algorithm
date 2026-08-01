@@ -158,11 +158,15 @@ def resolve_d0_codes(d0_codes: list[str]) -> list[str]:
     The d0 codes from userSearchLog are 6-digit codes matching 職務對照表.CodeNo.
     These map to CodeNameA (職務小類), which corresponds to 職缺.csv's 職務小類 column.
 
+    Supports both:
+    - 小類 codes (e.g. "140213") → exact match to one CodeNameA
+    - 中類 codes (e.g. "140200", last two digits "00") → expands to all 小類 under that 中類
+
     Args:
-        d0_codes: List of numeric job category code strings (e.g. ["160213", "120403"]).
+        d0_codes: List of numeric job category code strings (e.g. ["160213", "140200"]).
 
     Returns:
-        List of job category name strings (e.g. ["包裝員／作業員", "..."]).
+        List of job category name strings.
         Unknown codes are silently dropped.
     """
     df = _load_job_lookup()
@@ -170,12 +174,24 @@ def resolve_d0_codes(d0_codes: list[str]) -> list[str]:
     for code in d0_codes:
         try:
             code_int = int(code)
-            row = df[df["CodeNo"] == code_int]
-            if not row.empty:
-                names.append(row.iloc[0]["CodeNameA"])
+            # Check if this is a 中類 code (last two digits are 00)
+            if code_int % 100 == 0:
+                # Expand: find all 小類 codes under this 中類 prefix
+                # e.g. 140200 → match all codes 140201-140299
+                prefix_min = code_int + 1
+                prefix_max = code_int + 99
+                matched = df[(df["CodeNo"] >= prefix_min) & (df["CodeNo"] <= prefix_max)]
+                if not matched.empty:
+                    names.extend(matched["CodeNameA"].dropna().tolist())
+            else:
+                # Exact 小類 match
+                row = df[df["CodeNo"] == code_int]
+                if not row.empty:
+                    names.append(row.iloc[0]["CodeNameA"])
         except (ValueError, TypeError):
             pass
-    return names
+    # Deduplicate while preserving order
+    return list(dict.fromkeys(names))
 
 
 # ---------------------------------------------------------------------------
