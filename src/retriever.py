@@ -116,10 +116,10 @@ def semantic_expand(job_terms: list[str]) -> list[str]:
         expanded.add(term)
 
         mask = (
-            df["CodeNameA"].str.contains(term, na=False)
-            | df["CodeNameB"].str.contains(term, na=False)
-            | df["CodeNameC"].str.contains(term, na=False)
-            | df["CodeAlike"].str.contains(term, na=False)
+            df["CodeNameA"].str.contains(term, na=False, regex=False)
+            | df["CodeNameB"].str.contains(term, na=False, regex=False)
+            | df["CodeNameC"].str.contains(term, na=False, regex=False)
+            | df["CodeAlike"].str.contains(term, na=False, regex=False)
         )
         matched = df[mask]
         if not matched.empty:
