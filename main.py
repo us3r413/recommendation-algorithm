@@ -122,7 +122,7 @@ if USE_GRAPH_RAG or GRAPH_FOR_ANONYMOUS:
 #debug_recommend("台北 前端工程師 35k以上", talent_no=0)
 
 # # --- Example 2: Anonymous user, broader query with city filter ---
-debug_recommend("行銷企劃", talent_no=0, c0=["100100"])
+debug_recommend("人資", talent_no=1499)
 
 # # --- Example 3: Anonymous user, job category filter only ---
 # debug_recommend("", talent_no=0, c0=["100100", "100200"], d0=["140214", "140213"])
