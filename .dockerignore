@@ -1,0 +1,6 @@
+.git
+.hypothesis
+__pycache__
+*.pyc
+設計文件/
+.kiro/
