@@ -213,6 +213,33 @@ def _nx_query_skill_scores(
 # ---------------------------------------------------------------------------
 
 
+def _filter_existing_vertex_ids(g, vertex_ids: list[str]) -> list[str]:
+    """Filter a list of vertex IDs to only those that exist in Neptune.
+
+    Queries Neptune in batches to avoid oversized requests.
+    Returns only the IDs that actually exist as vertices.
+    """
+    from gremlin_python.process.graph_traversal import __ as AnonymousTraversal
+
+    existing: list[str] = []
+    batch_size = 200
+    for i in range(0, len(vertex_ids), batch_size):
+        batch = vertex_ids[i : i + batch_size]
+        try:
+            # Use hasId() which safely filters without throwing on missing IDs
+            found = g.V().hasId(*batch).id_().toList()
+            existing.extend(found)
+        except Exception:
+            # If batch query fails, try individual IDs
+            for vid in batch:
+                try:
+                    if g.V(vid).hasNext():
+                        existing.append(vid)
+                except Exception:
+                    pass
+    return existing
+
+
 def _gremlin_skill_overlap_scores(
     g,
     talent_no: int,
@@ -227,7 +254,19 @@ def _gremlin_skill_overlap_scores(
     from src.graph_builder import user_id
 
     uid = user_id(talent_no)
+
+    # Check that the user vertex exists
+    try:
+        if not g.V(uid).hasNext().next():
+            return {}
+    except Exception:
+        return {}
+
     candidate_ids = [f"job:{jid}" for jid in candidate_job_ids]
+    # Filter to only job vertices that exist in Neptune
+    candidate_ids = _filter_existing_vertex_ids(g, candidate_ids)
+    if not candidate_ids:
+        return {}
 
     try:
         # Get user's skills and find candidate jobs that require them
@@ -235,7 +274,7 @@ def _gremlin_skill_overlap_scores(
             g.V(uid)
             .outE("HAS_SKILL").inV().as_("skill")
             .inE("REQUIRES").outV()
-            .has("T.id", g.P.within(*candidate_ids))  # type: ignore
+            .hasId(*candidate_ids)
             .group()
             .by("jobId")
             .by(g.select("skill").count())  # type: ignore
@@ -264,7 +303,19 @@ def _gremlin_co_user_scores(
     from src.graph_builder import user_id
 
     uid = user_id(talent_no)
+
+    # Check that the user vertex exists
+    try:
+        if not g.V(uid).hasNext().next():
+            return {}
+    except Exception:
+        return {}
+
     candidate_ids = [f"job:{jid}" for jid in candidate_job_ids]
+    # Filter to only job vertices that exist in Neptune
+    candidate_ids = _filter_existing_vertex_ids(g, candidate_ids)
+    if not candidate_ids:
+        return {}
 
     try:
         results = (
@@ -275,7 +326,7 @@ def _gremlin_co_user_scores(
             .limit(MAX_CO_USERS)
             .outE("APPLIED", "VIEWED")
             .inV()
-            .has("T.id", g.P.within(*candidate_ids))  # type: ignore
+            .hasId(*candidate_ids)
             .groupCount()
             .by("jobId")
             .next()
@@ -303,13 +354,22 @@ def _gremlin_query_skill_scores(
     from src.graph_builder import skill_id
 
     skill_ids = [skill_id(s) for s in query_skills]
+    # Filter to only skill vertices that exist
+    skill_ids = _filter_existing_vertex_ids(g, skill_ids)
+    if not skill_ids:
+        return {}
+
     candidate_ids = [f"job:{jid}" for jid in candidate_job_ids]
+    # Filter to only job vertices that exist in Neptune
+    candidate_ids = _filter_existing_vertex_ids(g, candidate_ids)
+    if not candidate_ids:
+        return {}
 
     try:
         results = (
             g.V(*skill_ids)
             .inE("REQUIRES").outV()
-            .has("T.id", g.P.within(*candidate_ids))  # type: ignore
+            .hasId(*candidate_ids)
             .groupCount()
             .by("jobId")
             .next()

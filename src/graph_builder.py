@@ -479,9 +479,18 @@ def build_graph_neptune() -> None:
     # --- REQUIRES edges ---
     print("[Neptune] Adding REQUIRES edges...")
     requires_count = 0
+    skipped_requires = 0
+    # Use the set of job IDs that were actually added as vertices (present in both events AND 職缺.csv)
+    ingested_job_ids = set(jobs["職缺編號"].astype(int))
     if not skills_df.empty:
         for _, row in skills_df.iterrows():
             jid = int(row["job_id"])
+
+            # Skip jobs that weren't added as vertices
+            if jid not in ingested_job_ids:
+                skipped_requires += 1
+                continue
+
             skills_str = row["skills"]
             source = row["source"]
             confidence = 1.0 if source == "structured" else 0.8
@@ -503,6 +512,9 @@ def build_graph_neptune() -> None:
 
             if requires_count % 5000 == 0 and requires_count > 0:
                 print(f"    REQUIRES edges: {requires_count:,}")
+
+    if skipped_requires:
+        print(f"  (skipped {skipped_requires:,} jobs not in graph)")
 
     print(f"  {requires_count:,} REQUIRES edges")
 
@@ -533,9 +545,16 @@ def build_graph_neptune() -> None:
         ).next()
     print(f"  {len(users_seen):,} User vertices")
 
-    # Add interaction edges
+    # Add interaction edges (only to jobs that exist as vertices)
     interaction_count = 0
+    skipped_interactions = 0
+    # Reuse ingested_job_ids (jobs present in both events AND 職缺.csv)
+    valid_job_nodes = {job_id(jid) for jid in ingested_job_ids}
+
     for (uid, jnode, edge_label), weight in edge_agg.items():
+        if jnode not in valid_job_nodes:
+            skipped_interactions += 1
+            continue
         try:
             g.V(uid).addE(edge_label).to(AnonymousTraversal.V(jnode)).property("weight", weight).next()
             interaction_count += 1
@@ -545,6 +564,8 @@ def build_graph_neptune() -> None:
             print(f"    Interaction edges: {interaction_count:,}")
 
     print(f"  {interaction_count:,} interaction edges")
+    if skipped_interactions:
+        print(f"  (skipped {skipped_interactions:,} edges to non-existent job vertices)")
 
     elapsed = time.perf_counter() - start
     print(f"\n[GraphBuilder] Neptune ingestion complete in {elapsed:.1f}s")
