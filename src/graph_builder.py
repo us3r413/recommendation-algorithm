@@ -360,6 +360,8 @@ def build_graph_neptune() -> None:
     Requires USE_NEPTUNE=true and valid NEPTUNE_ENDPOINT in .env.
     """
     from src.neptune_client import get_traversal, NeptuneUnavailable
+    from gremlin_python.process.graph_traversal import __ as AnonymousTraversal
+    from gremlin_python.process.traversal import T
 
     try:
         g = get_traversal()
@@ -399,8 +401,8 @@ def build_graph_neptune() -> None:
     for s in skill_set:
         sid = skill_id(s)
         g.V(sid).fold().coalesce(
-            g.V(sid).unfold(),
-            g.addV("Skill").property("T.id", sid).property("name", s)
+            AnonymousTraversal.unfold(),
+            AnonymousTraversal.addV("Skill").property(T.id, sid).property("name", s)
         ).next()
     print(f"  {len(skill_set):,} Skill vertices")
 
@@ -415,8 +417,8 @@ def build_graph_neptune() -> None:
     for c in city_set:
         cid = city_id(c)
         g.V(cid).fold().coalesce(
-            g.V(cid).unfold(),
-            g.addV("City").property("T.id", cid).property("name", c)
+            AnonymousTraversal.unfold(),
+            AnonymousTraversal.addV("City").property(T.id, cid).property("name", c)
         ).next()
     print(f"  {len(city_set):,} City vertices")
 
@@ -431,8 +433,8 @@ def build_graph_neptune() -> None:
     for cat in category_set:
         catid = category_id(cat)
         g.V(catid).fold().coalesce(
-            g.V(catid).unfold(),
-            g.addV("Category").property("T.id", catid).property("name", cat)
+            AnonymousTraversal.unfold(),
+            AnonymousTraversal.addV("Category").property(T.id, catid).property("name", cat)
         ).next()
     print(f"  {len(category_set):,} Category vertices")
 
@@ -448,19 +450,19 @@ def build_graph_neptune() -> None:
 
         # Upsert Job vertex
         g.V(jnode).fold().coalesce(
-            g.V(jnode).unfold(),
-            g.addV("Job").property("T.id", jnode).property("jobId", jid).property("title", title).property("city", city_val).property("categoryMid", cat_val)
+            AnonymousTraversal.unfold(),
+            AnonymousTraversal.addV("Job").property(T.id, jnode).property("jobId", jid).property("title", title).property("city", city_val).property("categoryMid", cat_val)
         ).next()
 
         # LOCATED_IN edge
         if city_val:
             cid = city_id(city_val)
-            g.V(jnode).addE("LOCATED_IN").to(g.V(cid)).next()
+            g.V(jnode).addE("LOCATED_IN").to(AnonymousTraversal.V(cid)).next()
 
         # IN_CATEGORY edge
         if cat_val:
             catid = category_id(cat_val)
-            g.V(jnode).addE("IN_CATEGORY").to(g.V(catid)).next()
+            g.V(jnode).addE("IN_CATEGORY").to(AnonymousTraversal.V(catid)).next()
 
         job_count += 1
         if job_count % 1000 == 0:
@@ -488,7 +490,7 @@ def build_graph_neptune() -> None:
                     continue
                 sid = skill_id(s)
                 try:
-                    g.V(jnode).addE("REQUIRES").to(g.V(sid)).property("confidence", confidence).next()
+                    g.V(jnode).addE("REQUIRES").to(AnonymousTraversal.V(sid)).property("confidence", confidence).next()
                     requires_count += 1
                 except Exception:
                     pass
@@ -520,8 +522,8 @@ def build_graph_neptune() -> None:
     for talent_no in users_seen:
         uid = user_id(talent_no)
         g.V(uid).fold().coalesce(
-            g.V(uid).unfold(),
-            g.addV("User").property("T.id", uid).property("talentNo", talent_no)
+            AnonymousTraversal.unfold(),
+            AnonymousTraversal.addV("User").property(T.id, uid).property("talentNo", talent_no)
         ).next()
     print(f"  {len(users_seen):,} User vertices")
 
@@ -529,7 +531,7 @@ def build_graph_neptune() -> None:
     interaction_count = 0
     for (uid, jnode, edge_label), weight in edge_agg.items():
         try:
-            g.V(uid).addE(edge_label).to(g.V(jnode)).property("weight", weight).next()
+            g.V(uid).addE(edge_label).to(AnonymousTraversal.V(jnode)).property("weight", weight).next()
             interaction_count += 1
         except Exception:
             pass
