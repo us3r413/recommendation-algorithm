@@ -1,0 +1,28 @@
+{
+  "meta": {
+    "generated": "2026-08-01T18:27:52",
+    "n_queries": 500,
+    "k": 10,
+    "gain": "linear",
+    "use_talent": false,
+    "llm_available": false,
+    "llm_probe": "InvalidRegionError: Provided region_name '\"IQoJb3JpZ2luX2VjEKf//////////wEaCXVzLWVhc3QtMSJHMEUCIQCLaJvI7PS7X9DHrRIMufMSsSFqF7VzBC3sVEYjs2csMgIgNBJrJLOb+vA4lEqzCht+N/nSUFxYfUAprmATY",
+    "train_period": "2026-06-01..2026-06-05",
+    "test_query_day": "2026-06-06",
+    "label_window": "2026-06-06..2026-06-07"
+  },
+  "arms": {
+    "no_llm": {
+      "NDCG@10": 0.018500872779793703,
+      "Hit@1": 0.016,
+      "Hit@10": 0.04,
+      "P@10": 0.005400000000000001,
+      "MRR@10": 0.02331904761904762,
+      "n_queries": 500,
+      "n_empty_results": 34,
+      "seconds": 1491.8,
+      "sec_per_query": 2.984,
+      "desc": "移除 LLM（退回規則式分詞）"
+    }
+  }
+}

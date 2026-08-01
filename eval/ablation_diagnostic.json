@@ -1,0 +1,52 @@
+{
+  "meta": {
+    "generated": "2026-08-01T19:13:17",
+    "n_queries": 500,
+    "k": 10,
+    "gain": "linear",
+    "use_talent": false,
+    "llm_available": false,
+    "llm_probe": "not probed",
+    "train_period": "2026-06-01..2026-06-05",
+    "test_query_day": "2026-06-06",
+    "label_window": "2026-06-06..2026-06-07"
+  },
+  "arms": {
+    "no_llm": {
+      "NDCG@10": 0.018500872779793703,
+      "Hit@1": 0.016,
+      "Hit@10": 0.04,
+      "P@10": 0.005400000000000001,
+      "MRR@10": 0.02331904761904762,
+      "n_queries": 500,
+      "n_empty_results": 34,
+      "seconds": 1015.4,
+      "sec_per_query": 2.031,
+      "desc": "移除 LLM（退回規則式分詞）"
+    },
+    "no_llm_no_expand": {
+      "NDCG@10": 0.019060588498615964,
+      "Hit@1": 0.016,
+      "Hit@10": 0.044,
+      "P@10": 0.005800000000000001,
+      "MRR@10": 0.02466904761904762,
+      "n_queries": 500,
+      "n_empty_results": 34,
+      "seconds": 714.7,
+      "sec_per_query": 1.429,
+      "desc": "規則式解析 + 移除語意擴展"
+    },
+    "no_llm_no_rank": {
+      "NDCG@10": 0.0060776359060314275,
+      "Hit@1": 0.008,
+      "Hit@10": 0.012,
+      "P@10": 0.0012,
+      "MRR@10": 0.009285714285714284,
+      "n_queries": 500,
+      "n_empty_results": 34,
+      "seconds": 911.3,
+      "sec_per_query": 1.823,
+      "desc": "規則式解析 + 不排序（對照組）"
+    }
+  }
+}
