@@ -1,0 +1,4 @@
+# file: C:\Users\林哲緯\Documents\GitHub\recommendation-algorithm\src\query_parser.py
+# hypothesis_version: 6.135.26
+
+[256, 'BEDROCK_MODEL_ID', '^(\\d+)[kK]$', '^(\\d+)[kK]以上$', '^(\\d+)以上$', '^月薪(\\d+)萬$', '^薪資>=(\\d+)$', '^薪資>=?(\\d+)[kK]?$', '^薪資>=\\d+$', 'anthropic_version', 'application/json', 'bedrock-2023-05-31', 'bedrock-runtime', 'body', 'content', 'max_tokens', 'messages', 'role', 'system', 'text', 'user', '南投', '南投縣', '台中', '台中市', '台北', '台北市', '台南', '台南市', '台東', '台東縣', '嘉義', '嘉義市', '嘉義縣', '基隆', '基隆市', '宜蘭', '宜蘭縣', '屏東', '屏東縣', '彰化', '彰化縣', '新北', '新北市', '新竹', '新竹市', '新竹縣', '桃園', '桃園市', '澎湖', '澎湖縣', '花蓮', '花蓮縣', '苗栗', '苗栗縣', '連江', '連江縣', '金門', '金門縣', '雲林', '雲林縣', '高雄', '高雄市']

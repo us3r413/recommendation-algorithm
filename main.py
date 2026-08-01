@@ -1,8 +1,63 @@
 import time
 
+import pandas as pd
+
 from src.query_parser import querytoRequirement
 from src.retriever import grabFromDatabase
 from src.ranker import ranking
+
+# ---------------------------------------------------------------------------
+# User history helpers
+# ---------------------------------------------------------------------------
+
+EVENTS_PATH = "dataset/userBehaviorEvents.csv"
+FEATURES_PATH = "dataset/userBehaviorFeature.csv"
+
+_events_cache: pd.DataFrame | None = None
+_features_cache: pd.DataFrame | None = None
+
+
+def _load_events() -> pd.DataFrame:
+    global _events_cache
+    if _events_cache is None:
+        _events_cache = pd.read_csv(EVENTS_PATH)
+    return _events_cache
+
+
+def _load_features() -> pd.DataFrame:
+    global _features_cache
+    if _features_cache is None:
+        _features_cache = pd.read_csv(FEATURES_PATH)
+    return _features_cache
+
+
+def print_user_history(talent_no: int):
+    """Print a signed-in user's behaviour summary and recent events."""
+    features = _load_features()
+    row = features[features["talentNo"] == talent_no]
+    if row.empty:
+        print(f"\n[User History] talentNo={talent_no} — no feature record found")
+        return
+
+    feat = row.iloc[0]
+    print(f"\n[User History] talentNo={talent_no}")
+    print(f"  total_events: {int(feat['total_events'])}  |  cold_start: {feat['is_cold_start']}  |  last_active: {feat['last_active']}")
+    cities = [feat.get(f"preferred_city_{i}") for i in range(1, 4) if pd.notna(feat.get(f"preferred_city_{i}"))]
+    cats = [feat.get(f"preferred_category_{i}") for i in range(1, 4) if pd.notna(feat.get(f"preferred_category_{i}"))]
+    print(f"  preferred_cities: {cities}")
+    print(f"  preferred_categories: {cats}")
+    salary = feat.get("salary_floor")
+    print(f"  salary_floor: {salary if pd.notna(salary) else 'N/A'}")
+
+    # Recent events (last 10)
+    events = _load_events()
+    user_events = events[events["talentNo"] == talent_no].sort_values("event_time", ascending=False).head(10)
+    if user_events.empty:
+        print("  recent_events: (none)")
+    else:
+        print(f"  recent_events (last {len(user_events)}):")
+        for _, ev in user_events.iterrows():
+            print(f"    {ev['event_type']:5}  job={int(ev['job_id'])}  city={ev['job_city']}  cat={ev['job_category_mid']}  time={ev['event_time']}")
 
 
 def debug_recommend(query: str, talent_no: int, c0=None, d0=None):
@@ -37,6 +92,11 @@ def debug_recommend(query: str, talent_no: int, c0=None, d0=None):
 
     total_end = time.perf_counter()
     print(f"\n  Total: {total_end-total_start:.2f}s")
+
+    # Print user history for signed-in users before showing results
+    if talent_no != 0:
+        print_user_history(talent_no)
+
     print()
     for i, job in enumerate(results, 1):
         print(f"  {i:2}. {job.get('職務名稱', 'N/A')}")
@@ -44,14 +104,34 @@ def debug_recommend(query: str, talent_no: int, c0=None, d0=None):
     print()
 
 
-# --- Example 1: Natural language only (anonymous) ---
-debug_recommend("台北 前端工程師 35k以上", talent_no=0)
+# --- Preload graph only if graph ranking is enabled ---
+from src.ranker import USE_GRAPH_RAG, GRAPH_FOR_ANONYMOUS
+if USE_GRAPH_RAG or GRAPH_FOR_ANONYMOUS:
+    from src.graph_builder import get_graph
+    print("Preloading graph...")
+    get_graph()
+    print()
 
-# --- Example 2: With c0 city filter (台北市=100100, 新北市=100200) ---
-debug_recommend("軟體工程師", talent_no=0, c0=["100100", "100200"])
+# # --- Example 1: Anonymous user, natural language query ---
+# debug_recommend("台北 前端工程師 35k以上", talent_no=0)
 
-# --- Example 3: With c0 + d0 (台北市=100100, 前端工程師=140214, 網站程式設計師=140213) ---
-debug_recommend("", talent_no=0, c0=["100100"], d0=["140214", "140213"])
+# # --- Example 2: Anonymous user, broader query with city filter ---
+# debug_recommend("行銷企劃", talent_no=0, c0=["100100"])
 
-# --- Example 4: Logged-in user with c0 + d0 (simulating userSearchLog replay) ---
-debug_recommend("遠端", talent_no=53213129, c0=["100100", "100200", "100900"], d0=["160213", "120403"])
+# # --- Example 3: Anonymous user, job category filter only ---
+# debug_recommend("", talent_no=0, c0=["100100", "100200"], d0=["140214", "140213"])
+
+# # --- Example 4: Anonymous user, keyword + city ---
+# debug_recommend("台中 兼職 門市", talent_no=0)
+
+# --- Example 5: Signed-in user, personalised ranking ---
+debug_recommend("台北 前端工程師", talent_no=138)
+
+# --- Example 6: Signed-in user, broader query ---
+debug_recommend("行銷企劃", talent_no=143)
+
+# --- Example 7: Signed-in user, different preference ---
+debug_recommend("台中 兼職 門市", talent_no=301)
+
+# --- Example 8: Signed-in user, with city filter ---
+debug_recommend("軟體工程師", talent_no=138, c0=["100100"])

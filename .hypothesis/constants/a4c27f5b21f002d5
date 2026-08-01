@@ -1,0 +1,4 @@
+# file: C:\Users\林哲緯\Documents\GitHub\recommendation-algorithm\src\retriever.py
+# hypothesis_version: 6.135.26
+
+[' AND ', ' OR ', ', ', 'CodeAlike', 'CodeNameA', 'CodeNameB', 'CodeNameC', 'CodeNo', 'CodeType', 'WHERE ', '[,，]|<br\\s*/?>', 'cities', 'dataset/城市對照表.csv', 'dataset/瀏覽次數.csv', 'dataset/職務對照表.csv', 'dataset/職缺.csv', 'job_terms', 'job_types', 'salary_min']

@@ -1,0 +1,4 @@
+# file: C:\Users\林哲緯\Documents\GitHub\recommendation-algorithm\src\graph_builder.py
+# hypothesis_version: 6.135.26
+
+['Job', 'User', '__main__', 'apply', 'category_mid', 'city', 'coerce', 'dataset/職缺.csv', 'event_type', 'job_id', 'node_type', 'salary_lower', 'talentNo', 'view', 'weight', '工作城市', '職務中類', '職缺編號', '薪資下限']

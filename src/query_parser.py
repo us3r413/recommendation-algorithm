@@ -6,20 +6,20 @@ strings suitable for `grabFromDatabase`.
 
 Steps:
   1. Abbreviation expansion (rule-based, no I/O)
-  2. LLM call via the ``ollama`` Python SDK
+  2. LLM call via AWS Bedrock (Claude)
   3. JSON schema validation: the response must be a JSON array of plain strings
   4. Post-processing: normalise city names, parse salary patterns
   5. Up to 3 attempts total; on exhaustion fall back to rule-based parsing
 
-The model name defaults to ``"llama3"`` and is overridable via the
-``OLLAMA_MODEL`` environment variable.
+The model ID defaults to ``"anthropic.claude-3-5-sonnet-20241022-v2:0"`` and
+is overridable via the ``BEDROCK_MODEL_ID`` environment variable.
 """
 
 import json
 import os
 import re
 
-import ollama
+import boto3
 from dotenv import load_dotenv
 
 from src.utils.abbreviations import abbreviation_expand
@@ -158,16 +158,29 @@ def querytoRequirement(query: str) -> list[str]:
     if not expanded.strip():
         return []
 
+    model_id = os.environ.get(
+        "BEDROCK_MODEL_ID", "anthropic.claude-3-5-sonnet-20241022-v2:0"
+    )
+    bedrock = boto3.client("bedrock-runtime")
+
     for _attempt in range(3):
         try:
-            response = ollama.chat(
-                model=os.environ.get("OLLAMA_MODEL", "llama3"),
-                messages=[
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user",   "content": expanded},
+            body = json.dumps({
+                "anthropic_version": "bedrock-2023-05-31",
+                "max_tokens": 256,
+                "system": SYSTEM_PROMPT,
+                "messages": [
+                    {"role": "user", "content": expanded},
                 ],
+            })
+            response = bedrock.invoke_model(
+                modelId=model_id,
+                contentType="application/json",
+                accept="application/json",
+                body=body,
             )
-            raw = response["message"]["content"].strip()
+            response_body = json.loads(response["body"].read())
+            raw = response_body["content"][0]["text"].strip()
             parsed = json.loads(raw)
             if (isinstance(parsed, list)
                     and all(isinstance(t, str) for t in parsed)):
