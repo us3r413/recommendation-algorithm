@@ -1,0 +1,4 @@
+# file: C:\Users\林哲緯\Documents\GitHub\recommendation-algorithm\src\graph_ranker.py
+# hypothesis_version: 6.135.26
+
+[0.0, 0.3, 0.7, 1.0, ':', 'User', 'job:', 'node_type', 'score', 'weight', '職缺最後修改時間', '職缺編號']

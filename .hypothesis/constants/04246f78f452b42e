@@ -1,0 +1,4 @@
+# file: C:\Users\林哲緯\Documents\GitHub\recommendation-algorithm\src\ranker.py
+# hypothesis_version: 6.135.26
+
+[0.0, 0.2, 0.3, 0.4, 0.5, 0.7, 1.0, '1', 'USE_GRAPH_RAG', 'false', 'is_cold_start', 'preferred_category_1', 'preferred_category_2', 'preferred_category_3', 'preferred_city_1', 'preferred_city_2', 'preferred_city_3', 'salary_floor', 'score', 'talentNo', 'true', 'yes', '工作城市', '職務中類', '職缺最後修改時間', '薪資下限']

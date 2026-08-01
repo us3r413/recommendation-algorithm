@@ -6,6 +6,7 @@ Validates: Requirements 1.1, 1.7, 1.8
 import json
 import re
 from unittest.mock import patch, MagicMock
+from io import BytesIO
 
 from hypothesis import given, settings
 from hypothesis import strategies as st
@@ -13,6 +14,14 @@ from hypothesis import strategies as st
 from src.query_parser import querytoRequirement
 
 SALARY_TAG_RE = re.compile(r"^薪資>=(\d+)$")
+
+
+def _make_bedrock_response(content_list: list[str]) -> dict:
+    """Create a mock Bedrock invoke_model response."""
+    body_payload = json.dumps({
+        "content": [{"type": "text", "text": json.dumps(content_list)}],
+    }).encode()
+    return {"body": BytesIO(body_payload)}
 
 
 # ---------------------------------------------------------------------------
@@ -28,9 +37,10 @@ def test_property1_llm_success_always_returns_list_of_str(query: str) -> None:
     When the LLM succeeds and returns a valid JSON array of strings,
     querytoRequirement MUST return a list where every element is a str.
     """
-    mock_response = {"message": {"content": '["tag1", "tag2"]'}}
+    mock_client = MagicMock()
+    mock_client.invoke_model.return_value = _make_bedrock_response(["tag1", "tag2"])
 
-    with patch("src.query_parser.ollama.chat", return_value=mock_response):
+    with patch("src.query_parser.boto3.client", return_value=mock_client):
         result = querytoRequirement(query)
 
     assert isinstance(result, list), f"Expected list, got {type(result)}"
@@ -46,10 +56,10 @@ def test_property1_llm_failure_always_returns_list_of_str(query: str) -> None:
     When the LLM fails (raises an exception), querytoRequirement MUST still
     return a list where every element is a str (via the fallback path).
     """
-    with patch(
-        "src.query_parser.ollama.chat",
-        side_effect=Exception("connection refused"),
-    ):
+    mock_client = MagicMock()
+    mock_client.invoke_model.side_effect = Exception("connection refused")
+
+    with patch("src.query_parser.boto3.client", return_value=mock_client):
         result = querytoRequirement(query)
 
     assert isinstance(result, list), f"Expected list, got {type(result)}"
@@ -71,15 +81,12 @@ def test_property4_salary_tag_correctly_formatted(salary_value: int) -> None:
     result should contain exactly one element matching ^薪資>=\\d+$ and the
     integer value in that tag should match the expected salary value.
     """
-    mock_response = {
-        "message": {
-            "content": json.dumps(
-                [f"薪資>={salary_value}", "後端工程師"]
-            )
-        }
-    }
+    mock_client = MagicMock()
+    mock_client.invoke_model.return_value = _make_bedrock_response(
+        [f"薪資>={salary_value}", "後端工程師"]
+    )
 
-    with patch("src.query_parser.ollama.chat", return_value=mock_response):
+    with patch("src.query_parser.boto3.client", return_value=mock_client):
         result = querytoRequirement(f"薪水{salary_value}以上 後端")
 
     # Exactly one tag should match the salary regex
@@ -115,9 +122,10 @@ def test_property3_valid_llm_json_returned_as_is(generated_list: list[str]) -> N
     When the LLM returns a valid JSON array of strings, querytoRequirement
     must return that exact array (same elements, same order).
     """
-    mock_response = {"message": {"content": json.dumps(generated_list)}}
+    mock_client = MagicMock()
+    mock_client.invoke_model.return_value = _make_bedrock_response(generated_list)
 
-    with patch("src.query_parser.ollama.chat", return_value=mock_response):
+    with patch("src.query_parser.boto3.client", return_value=mock_client):
         result = querytoRequirement("any query")
 
     assert result == generated_list
@@ -139,7 +147,10 @@ def test_property5_fallback_equals_expanded_split(query: str) -> None:
     `abbreviation_expand(query).split()` — the whitespace-tokenised form
     of the abbreviation-expanded query, with no other transformations applied.
     """
-    with patch("src.query_parser.ollama.chat", side_effect=Exception("mock failure")):
+    mock_client = MagicMock()
+    mock_client.invoke_model.side_effect = Exception("mock failure")
+
+    with patch("src.query_parser.boto3.client", return_value=mock_client):
         result = querytoRequirement(query)
 
     expected = abbreviation_expand(query).split()
