@@ -92,6 +92,34 @@ _SALARY_PATTERNS = [
 ]
 
 
+def _extract_json_array(raw: str) -> str:
+    """Pull the JSON array out of a model response.
+
+    Bedrock models sometimes wrap structured output in a markdown fence even
+    when the prompt asks for bare JSON:
+
+        ```json
+        ["台北市", "兼職"]
+        ```
+
+    json.loads() raises on that, which silently burns all three retries and
+    drops the query to the rule-based fallback — the LLM stage looks "enabled"
+    while contributing nothing, and the failure is invisible because the
+    fallback still returns a usable-looking result. claude-sonnet-4-6 happens to
+    return bare JSON, but that is a property of one model, not a guarantee.
+    Strip any fence, then take the outermost [...] span so leading prose is
+    tolerated too.
+    """
+    text = raw.strip()
+    if text.startswith("```"):
+        text = text.split("\n", 1)[1] if "\n" in text else ""
+        text = text.rsplit("```", 1)[0]
+    start, end = text.find("["), text.rfind("]")
+    if start != -1 and end > start:
+        text = text[start:end + 1]
+    return text.strip()
+
+
 def _post_process_tags(tags: list[str]) -> list[str]:
     """Normalise tags: fix city names, parse salary patterns."""
     result = []
@@ -169,8 +197,8 @@ def _llm_parse_cached(expanded: str) -> list[str] | None:
                 body=body,
             )
             response_body = json.loads(response["body"].read())
-            raw = response_body["content"][0]["text"].strip()
-            parsed = json.loads(raw)
+            raw = response_body["content"][0]["text"]
+            parsed = json.loads(_extract_json_array(raw))
             if (isinstance(parsed, list)
                     and all(isinstance(t, str) for t in parsed)):
                 return parsed

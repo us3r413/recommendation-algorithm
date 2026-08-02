@@ -46,7 +46,11 @@ POP_TRAIN = os.path.join(ROOT, "dataset", "瀏覽次數_train.csv")
 JOBS_PARQUET = os.path.join(ROOT, "dataset", "職缺.parquet")
 JOBS_CSV = os.path.join(ROOT, "dataset", "職缺.csv")
 
-from eval.metrics import evaluate  # noqa: E402
+from eval.metrics import evaluate, evaluate_per_query  # noqa: E402
+
+# Train-only interaction graph (see eval/build_graph_train.py for why the
+# production full-week graph must not be used here).
+GRAPH_TRAIN = os.path.join(ROOT, "dataset", "graph_cache_train.pkl")
 
 # ---------------------------------------------------------------------------
 # Arm definitions
@@ -68,6 +72,11 @@ ARMS: dict[str, dict] = {
     # Control: no ranking at all — isolates what the ranker contributes
     "no_rank":    dict(llm=True,  expand=True,  graph=False, rank="none",
                        desc="不排序（檢索原始順序，對照組）"),
+
+    # Conditional expansion — see make_hybrid_parser() for the rationale.
+    "hybrid":     dict(llm=True,  expand=True,  graph=False, rank="popularity",
+                       hybrid=True,
+                       desc="條件式擴展（字面查詢過少時才用 LLM 擴展）"),
 
     # --- Credential-free diagnostics -------------------------------------
     # These isolate the retrieval and ranking stages without needing Bedrock,
@@ -115,6 +124,38 @@ def make_llm_parser(cache: dict):
         return tags
 
     return parse
+
+
+HYBRID_MIN_CANDIDATES = 200
+
+
+def make_hybrid_parser(cache: dict, retriever):
+    """Use the literal query first; fall back to LLM expansion only if it is sparse.
+
+    Measured behaviour of the always-expand prompt: it trades precision for
+    recall on short keywords, and NDCG@10 punishes precision loss at the top.
+    「現領」 (12.8% of the test set) goes from 142 candidates to 10,468 once the
+    LLM adds 日薪/當日領/即領/日結/週領/現金 — every synonym is correct, but the
+    job the user actually clicked is now buried, and `relevance_hits` will even
+    prefer a job matching three loose synonyms over an exact 現領 match.
+
+    Expansion is what you want in the opposite case: when the literal terms
+    retrieve almost nothing, recall is the binding constraint and the LLM's
+    world knowledge (飲料店 → 五十嵐/清心/迷客夏) is the only way to find
+    anything at all. So gate on candidate count rather than applying it always.
+    """
+    llm_parse = make_llm_parser(cache)
+    rule_parse = make_rule_parser()
+
+    def parse_with_counts(q: str, c0, d0):
+        literal = rule_parse(q)
+        if literal:
+            n = len(retriever.grabFromDatabase(literal, c0=c0, d0=d0))
+            if n >= HYBRID_MIN_CANDIDATES:
+                return literal, "literal"
+        return llm_parse(q), "expanded"
+
+    return parse_with_counts
 
 
 def probe_llm() -> tuple[bool, str]:
@@ -172,20 +213,37 @@ def run_arm(name: str, cfg: dict, queries: list[dict], use_talent: bool,
     R.semantic_expand = (R._orig_semantic_expand if cfg["expand"]
                          else (lambda terms: list(terms)))
 
-    # --- graph toggle (ranker reads these globals at call time) -------------
+    # --- graph toggle -------------------------------------------------------
+    # ranking() reads these globals at call time and lazily imports
+    # src.graph_ranker. That module now targets the ability (skill) graph, which
+    # the team dropped; the interaction-graph arm is served instead from
+    # eval/graph_ranker_interaction.py, injected here so src/ stays untouched.
     K.GRAPH_FOR_ANONYMOUS = bool(cfg["graph"])
     K.USE_GRAPH_RAG = bool(cfg["graph"])
+    if cfg["graph"]:
+        import eval.graph_ranker_interaction as GRI
+        sys.modules["src.graph_ranker"] = GRI
 
-    parse = make_llm_parser(tag_cache) if cfg["llm"] else make_rule_parser()
+    hybrid = cfg.get("hybrid", False)
+    if hybrid:
+        hybrid_parse = make_hybrid_parser(tag_cache, R)
+        parse = None
+    else:
+        parse = make_llm_parser(tag_cache) if cfg["llm"] else make_rule_parser()
 
     results: dict[str, list[str]] = {}
+    routed = {"literal": 0, "expanded": 0}
     t0 = time.time()
     for i, q in enumerate(queries, 1):
         c0 = [c.strip() for c in (q["c0"] or "").split(",") if c.strip()] or None
         d0 = [d.strip() for d in (q["d0"] or "").split(",") if d.strip()] or None
         talent = int(q["talentNo"]) if use_talent else 0
         try:
-            tags = parse(q["ks"])
+            if hybrid:
+                tags, route = hybrid_parse(q["ks"], c0, d0)
+                routed[route] += 1
+            else:
+                tags = parse(q["ks"])
             cands = R.grabFromDatabase(tags, c0=c0, d0=d0)
             if cfg["rank"] == "none":
                 top = cands[:10]
@@ -200,6 +258,9 @@ def run_arm(name: str, cfg: dict, queries: list[dict], use_talent: bool,
             rate = (time.time() - t0) / i
             log(f"    {name}: {i}/{len(queries)}  ({rate:.2f}s/query, "
                 f"eta {rate*(len(queries)-i)/60:.1f}min)")
+    if hybrid:
+        log(f"    routing: {routed['literal']} literal / "
+            f"{routed['expanded']} expanded")
     return results, time.time() - t0
 
 
@@ -264,16 +325,17 @@ def main() -> int:
         log(f"Loaded {len(tag_cache)} cached LLM parses")
 
     report: dict[str, dict] = {}
+    per_query: dict[str, dict] = {}
     for name in requested:
         cfg = ARMS[name]
         log(f"--- arm: {name} — {cfg['desc']}")
-        if cfg["graph"] and not os.path.exists(
-                os.path.join(ROOT, "dataset", "graph_cache.pkl")):
-            log("    SKIPPED: dataset/graph_cache.pkl not built "
-                "(python -m src.graph_builder)")
+        if cfg["graph"] and not os.path.exists(GRAPH_TRAIN):
+            log(f"    SKIPPED: {GRAPH_TRAIN} not built "
+                "(python eval/build_graph_train.py)")
             continue
         res, secs = run_arm(name, cfg, queries, args.use_talent, tag_cache)
         m = evaluate(res, qrels, args.k, args.gain)
+        per_query[name] = evaluate_per_query(res, qrels, args.k, args.gain)
         m["seconds"] = round(secs, 1)
         m["sec_per_query"] = round(secs / max(len(queries), 1), 3)
         m["desc"] = cfg["desc"]
@@ -299,7 +361,8 @@ def main() -> int:
         "label_window": "2026-06-06..2026-06-07",
     }
     with open(args.out_json, "w", encoding="utf-8") as fh:
-        json.dump({"meta": meta, "arms": report}, fh, ensure_ascii=False, indent=2)
+        json.dump({"meta": meta, "arms": report, "per_query": per_query},
+                  fh, ensure_ascii=False, indent=2)
 
     write_markdown(args.out_md, meta, report, args.k)
     log(f"WROTE {args.out_json}")

@@ -155,5 +155,24 @@ python eval/run_ablation.py --arms full,no_llm,graph
 | `reproduce.sh` | 一鍵重現（評審執行此檔即可） |
 | `build_testset.py` | 產生測試查詢與分級標註 |
 | `build_popularity.py` | 產生訓練期專用熱門度表（防洩漏） |
+| `build_graph_train.py` | 產生訓練期專用互動圖（防洩漏，見下） |
 | `metrics.py` | NDCG@10 / Hit@1 / Hit@10 / P@10 / MRR，含自我測試 |
 | `run_ablation.py` | Ablation 主程式，含 Bedrock 可用性檢查 |
+| `analyze_strata.py` | 分層比較 + 配對 bootstrap 顯著性檢定 |
+
+### 關於兩份圖譜
+
+| 圖 | 資料範圍 | 用途 |
+|---|---|---|
+| `dataset/graph_cache.pkl` | 全週 06-01~06-07 | 線上服務／demo（實際服務本就該用全部資料） |
+| `dataset/graph_cache_train.pkl` | **06-01~06-05** | **評測專用**，由 `build_graph_train.py` 產生 |
+
+`src/graph_builder.py` 讀取事件時無日期過濾，其產出的圖包含測試日（06-06）與標註窗口（06-07）的互動，用於評測即為洩漏。且 `graph_cache.pkl` 僅存加總後的邊權重、不含時間戳，**無法事後移除測試期的邊**，只能由過濾後的事件重建。
+
+### 分層分析
+
+```bash
+python eval/analyze_strata.py --a no_expand --b no_llm_no_expand
+```
+
+測試集查詢長度中位數僅 3 字，76% 為短關鍵字 —— 該類查詢的規則式分詞與 LLM 解析輸出完全相同，混入總平均只會將差異稀釋為零。`analyze_strata.py` 將查詢分為四層（短關鍵字／空格分隔／長字串／多職稱清單），分別報告，並以配對 bootstrap 檢定各層差異之顯著性。

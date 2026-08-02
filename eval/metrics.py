@@ -86,6 +86,34 @@ def mrr_at_k(ranked_ids: list[str], labels: dict[str, int],
     return 0.0
 
 
+def evaluate_per_query(results: dict[str, list[str]],
+                       qrels: dict[str, dict[str, int]],
+                       k: int = DEFAULT_K,
+                       gain: str = "linear") -> dict[str, dict[str, float]]:
+    """Per-query scores, keyed by qid.
+
+    Needed for anything the macro average cannot express: paired significance
+    tests between arms, and stratified reporting (e.g. short keyword queries vs
+    long multi-title queries, where a single mean hides opposite effects).
+
+    Only queries with at least one relevant document are included, matching
+    evaluate().
+    """
+    out: dict[str, dict[str, float]] = {}
+    for qid, lab in qrels.items():
+        if not any(v > 0 for v in lab.values()):
+            continue
+        ranked = results.get(qid, [])
+        out[qid] = {
+            f"NDCG@{k}": ndcg_at_k(ranked, lab, k, gain),
+            "Hit@1": hit_at_k(ranked, lab, 1),
+            f"Hit@{k}": hit_at_k(ranked, lab, k),
+            f"P@{k}": precision_at_k(ranked, lab, k),
+            f"MRR@{k}": mrr_at_k(ranked, lab, k),
+        }
+    return out
+
+
 def evaluate(results: dict[str, list[str]], qrels: dict[str, dict[str, int]],
              k: int = DEFAULT_K, gain: str = "linear") -> dict[str, float]:
     """Aggregate metrics over a whole run.

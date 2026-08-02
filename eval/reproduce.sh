@@ -68,19 +68,33 @@ fi
 echo ">>> [2/4] Building train-only popularity table (events 06-01..06-05) ..."
 $PY eval/build_popularity.py
 
-# --- 3. Test set with graded relevance labels -------------------------------
-echo ">>> [3/4] Building test set (queries 06-06, labels 06-06..06-07) ..."
+# --- 3. Train-only interaction graph (leakage guard) ------------------------
+# The production graph spans the whole week and therefore contains the test-day
+# clicks; it cannot be used for evaluation. Rebuild from train-period events.
+echo ">>> [3/5] Building train-only interaction graph ..."
+$PY eval/build_graph_train.py
+
+# --- 4. Test set with graded relevance labels -------------------------------
+echo ">>> [4/5] Building test set (queries 06-06, labels 06-06..06-07) ..."
 $PY eval/build_testset.py --target "$TARGET" --seed 42
 
-# --- 4. Ablation ------------------------------------------------------------
-echo ">>> [4/4] Running ablation ..."
+# --- 5. Ablation ------------------------------------------------------------
+echo ">>> [5/5] Running ablation ..."
 # LLM arms are skipped automatically (not silently downgraded) when Bedrock is
 # unreachable; see the probe_llm() note in run_ablation.py.
 # shellcheck disable=SC2086
 $PY eval/run_ablation.py $LIMIT_ARG
 
+# Stratified comparison + paired significance test. Needs per-query scores for
+# both arms; skipped with a message if those arms were not run.
+echo ">>> Stratified analysis ..."
+$PY eval/analyze_strata.py --json eval/ablation_results.json \
+    --a no_expand --b no_llm_no_expand || \
+    echo "    (skipped — run --arms no_expand,no_llm_no_expand for the stratified table)"
+
 echo
 echo ">>> DONE"
 echo "    eval/ABLATION_REPORT.md     — report table + limitations"
-echo "    eval/ablation_results.json  — raw metrics"
+echo "    eval/STRATIFIED_REPORT.md   — where the LLM actually contributes"
+echo "    eval/ablation_results.json  — raw metrics + per-query scores"
 echo "    eval/testset.jsonl          — queries + graded relevance labels"
