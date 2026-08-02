@@ -1,6 +1,6 @@
 # 職缺推薦演算法
 
-根據使用者的搜尋查詢（及登入狀態），從約 100 萬筆職缺中推薦最相關的 10 筆職缺。
+根據使用者的搜尋查詢（及登入狀態），從約 120 萬筆職缺中推薦最相關的 10 筆職缺。
 
 ---
 
@@ -8,7 +8,7 @@
 
 - [系統架構](#系統架構)
 - [API Endpoint](#api-endpoint)
-- [知識圖譜（Neptune）](#知識圖譜neptune)
+- [能力知識圖譜](#能力知識圖譜)
 - [資料流程](#資料流程)
 - [環境設定](#環境設定)
 - [資料集準備](#資料集準備)
@@ -26,7 +26,12 @@
 
 ## 系統架構
 
-系統採用三階段 Pipeline + 能力知識圖譜設計。查詢引擎使用 DuckDB（in-process），圖譜引擎使用 Amazon Neptune（Gremlin），本地開發可 fallback 至 networkx。
+系統採用三階段 Pipeline + 能力知識圖譜設計。查詢引擎使用 DuckDB（in-process），圖譜以 **networkx 於程式內遍歷**。
+
+> **關於 Amazon Neptune**：`src/neptune_client.py` 保留了 Neptune（Gremlin）連線實作，
+> 但本次交付**未使用 Neptune** —— Neptune 叢集部署未完成，`USE_NEPTUNE` 預設為 `false`，
+> 所有圖譜遍歷皆由 networkx 在應用程式行程內執行。README 中提及 Neptune 之處均為
+> 「可選後端」，非本次實際運行架構。
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -56,12 +61,12 @@
 │                │ candidates: list[dict] (with relevance_hits)         │
 │                ▼                                                      │
 │   ┌──────────────────────────┐   ┌────────────────────────────┐     │
-│   │  ranking()               │──▶│ Amazon Neptune (Gremlin)    │     │
-│   │  • relevance_hits 優先   │   │ 能力知識圖譜               │     │
-│   │  • 技能重疊匹配          │   └────────────────────────────┘     │
-│   │  • 城市偏好匹配          │   ┌────────────────────────────┐     │
-│   │  • 協同過濾（共同技能）  │──▶│ userBehaviorFeature.csv     │     │
-│   │  • Fallback: 熱門排序    │   └────────────────────────────┘     │
+│   │  ranking()               │──▶│ 能力知識圖譜 (networkx)     │     │
+│   │  • relevance_hits 優先   │   │ 需 GRAPH_FOR_* = true       │     │
+│   │  • 熱門度（時間衰退）    │   └────────────────────────────┘     │
+│   │  ── 以下需啟用圖譜 ──    │   ┌────────────────────────────┐     │
+│   │  • 技能重疊 / 城市偏好   │──▶│ userBehaviorFeature.csv     │     │
+│   │  • 協同過濾（共同技能）  │   └────────────────────────────┘     │
 │   └────────────┬─────────────┘                                       │
 │                │                                                      │
 │                ▼                                                      │
@@ -86,9 +91,20 @@
 - LEFT JOIN `瀏覽次數.csv` 為每筆候選職缺附加熱門分數
 - relevance_hits 計數：統計每筆候選職缺匹配的標籤數量
 
-### 第三階段：排序（ranking）— 能力圖譜排序
+### 第三階段：排序（ranking）
 
-使用 Amazon Neptune 知識圖譜進行能力基礎排序：
+**預設路徑（`GRAPH_FOR_*=false`，即目前部署設定）**
+
+```
+排序鍵 = (relevance_hits, 熱門度分數, 職缺最後修改時間)  降冪
+```
+
+`relevance_hits` 為候選職缺命中的查詢標籤數，**相關性優先於熱門度**；熱門度為時間衰退加權
+（見[資料流程](#資料流程)）。已登入且非冷啟動之使用者改走 `userBehaviorFeature.csv` 的個人化路徑。
+
+**圖譜路徑（需將 `GRAPH_FOR_SIGNED_IN_USER` / `GRAPH_FOR_ANONYMOUS_USER` 設為 `true`）**
+
+以 networkx 遍歷能力知識圖譜計分：
 
 - **已登入用戶**：
   ```
@@ -106,6 +122,12 @@
   ```
 
 - **Fallback**：圖譜無信號時退回熱門度排序
+
+> ⚠️ **已知問題（由本專案離線評測發現）**：`src/ranker.py` 呼叫
+> `graph_ranking_anonymous(candidates)` 時未傳入 `query_skills` 參數，而該函式在
+> `query_skills` 為空時會直接退回熱門度排序。因此**匿名查詢路徑上的技能圖譜實際從未被啟用**，
+> 這也是 ablation 中「有圖譜」與「無圖譜」兩組指標完全相同（NDCG@10 皆為 0.0190）的直接原因。
+> 詳見 [`eval/EVALUATION_REPORT.md`](eval/EVALUATION_REPORT.md)。
 
 ---
 
@@ -158,11 +180,13 @@ curl -X POST http://35.85.148.23:8000/api/v1/jobs/search \
 
 ---
 
-## 知識圖譜（Neptune）
+## 能力知識圖譜
 
 ### 圖譜架構
 
-以「能力/技能」為核心的知識圖譜，使用 Amazon Neptune + Gremlin 查詢語言。
+以「能力/技能」為核心的知識圖譜，以 **networkx `DiGraph`** 實作並序列化為 pickle 快取。
+節點與邊之定義如下（`src/graph_builder.py`）。完整 schema 與遍歷 trace 範例見
+[`設計文件/graph_schema_and_trace.md`](設計文件/graph_schema_and_trace.md)。
 
 **Vertex Labels:**
 
@@ -188,12 +212,12 @@ curl -X POST http://35.85.148.23:8000/api/v1/jobs/search \
 
 ### 混合技能萃取（Hybrid Extraction）
 
-1. **結構化欄位優先**（382,758 筆職缺）：直接解析 `電腦技能資料`、`工作技能`、`專業證照`
-2. **LLM 萃取**（其餘職缺）：使用 Bedrock Claude 從 `職務名稱` + `職務內容` 提取技能
+1. **結構化欄位優先**：直接解析 `電腦技能資料`、`工作技能`、`專業證照`
+2. **LLM 萃取**：使用 Bedrock Claude 從 `職務名稱` + `職務內容` 提取技能
 
-結果快取於 `dataset/job_skills_cache.csv`。
+結果快取於 `dataset/job_skills_cache.csv`（88,470 筆職缺 → 2,410 個正規化技能）。
 
-### 推薦邏輯（Gremlin 遍歷）
+### 推薦邏輯（圖譜遍歷）
 
 **已登入用戶：**
 ```
@@ -207,9 +231,14 @@ User → HAS_SKILL → Skill ← HAS_SKILL ← OtherUser → APPLIED → Job  (�
 Query Tags → Skill ← REQUIRES ← Candidate Job  (查詢技能匹配)
 ```
 
-### 本地 Fallback
+### 執行後端
 
-`USE_NEPTUNE=false` 時，相同邏輯以 networkx 在本機執行（無需 Neptune 連線）。
+| 後端 | 開關 | 本次交付狀態 |
+|------|------|------|
+| networkx（行程內遍歷） | `USE_NEPTUNE=false`（預設） | ✅ **實際使用** |
+| Amazon Neptune（Gremlin） | `USE_NEPTUNE=true` | ❌ 未使用；連線程式碼保留於 `src/neptune_client.py`，叢集未完成部署 |
+
+兩者遍歷邏輯相同，Neptune 僅作為儲存後端。
 
 ---
 
@@ -237,9 +266,13 @@ Query Tags → Skill ← REQUIRES ← Candidate Job  (查詢技能匹配)
         │                   混合萃取：結構化 + LLM
         │
         ▼
-  graph_builder.py ─────▶ Neptune 圖譜 or networkx 快取
-                            Job, Skill, City, User 節點 + 邊
+  graph_builder.py ─────▶ networkx 圖譜快取 (pickle)
+                            Job, Skill, City, Category, User 節點 + 邊
 ```
+
+> ⚠️ **目前 `src/graph_builder.py` 只建構 User–Job 互動層，不再產生 Skill / City / Category
+> 節點**。既有的技能圖譜快取由先前版本產生，該版本程式碼未保留於本 repo —— 評審 clone 後
+> **無法由本 repo 重建含技能層之圖譜**。此為已知交付缺口。
 
 ### 資料時間範圍
 
@@ -253,8 +286,9 @@ Query Tags → Skill ← REQUIRES ← Candidate Job  (查詢技能匹配)
 ### 系統需求
 
 - Python 3.11+
-- AWS 帳號（需 `bedrock-runtime:InvokeModel` + Neptune 存取權限）
-- Amazon Neptune cluster（或使用 networkx 本地模式）
+- AWS 帳號（需 `bedrock-runtime:InvokeModel` 權限）
+- 記憶體 ≥ 8 GB（DuckDB 職缺表常駐 + 圖譜快取）
+- **不需要** Amazon Neptune —— 圖譜以 networkx 在本機執行
 
 ### 安裝
 
@@ -273,25 +307,23 @@ AWS_ACCESS_KEY_ID=your-access-key
 AWS_SECRET_ACCESS_KEY=your-secret-key
 AWS_SESSION_TOKEN=your-session-token
 
-# Graph ranking toggle
+# Graph ranking toggle（目前部署為關閉）
 GRAPH_FOR_SIGNED_IN_USER=false
 GRAPH_FOR_ANONYMOUS_USER=false
 
-# Neptune connection
-USE_NEPTUNE=true
-NEPTUNE_ENDPOINT=your-cluster.neptune.amazonaws.com
-NEPTUNE_PORT=8182
+# 圖譜後端：預設 networkx。設為 true 才會嘗試連線 Neptune（本次交付未使用）
+USE_NEPTUNE=false
 ```
 
 | 變數名稱 | 說明 | 預設值 |
 |----------|------|--------|
 | `BEDROCK_MODEL_ID` | Bedrock 模型 ID | `us.anthropic.claude-sonnet-4-6` |
 | `AWS_DEFAULT_REGION` | AWS 區域 | `us-west-2` |
-| `USE_NEPTUNE` | 啟用 Neptune 圖譜 | `false` |
-| `NEPTUNE_ENDPOINT` | Neptune cluster endpoint | — |
-| `NEPTUNE_PORT` | Neptune port | `8182` |
+| `USE_NEPTUNE` | 改用 Neptune 作為圖譜後端（本次未使用） | `false` |
 | `GRAPH_FOR_SIGNED_IN_USER` | 登入用戶啟用圖譜排序 | `false` |
 | `GRAPH_FOR_ANONYMOUS_USER` | 匿名用戶啟用圖譜排序 | `false` |
+
+`NEPTUNE_ENDPOINT` / `NEPTUNE_PORT` 僅於 `USE_NEPTUNE=true` 時讀取，本次交付不需設定。
 
 ---
 
@@ -301,7 +333,7 @@ NEPTUNE_PORT=8182
 
 | 檔案 | 說明 | 規模 |
 |------|------|------|
-| `職缺.csv` | 職缺主表 | ~1,000,000 筆 |
+| `職缺.csv` | 職缺主表 | 1,218,635 筆 |
 | `職缺瀏覽_20260601_20260607.csv` | 瀏覽行為紀錄 | ~8,467,232 筆 |
 | `主動應徵_0601-0607.csv` | 應徵行為紀錄 | 包含於上述統計 |
 | `城市對照表.csv` | 城市代碼對照表 | — |
@@ -318,10 +350,17 @@ python dataset/userAnalysis.py       # → userBehaviorFeature.csv + userBehavio
 python -m src.skill_extractor            # 結構化欄位（快速）
 python -m src.skill_extractor --llm      # + LLM 萃取（需 Bedrock）
 
-# 3. 圖譜建構
-python -m src.graph_builder              # Neptune (USE_NEPTUNE=true) 或 networkx
+# 3. 圖譜建構（networkx，輸出 dataset/graph_cache.pkl）
+python -m src.graph_builder
 python -m src.graph_builder --rebuild    # 強制重建
+
+# 圖譜時間範圍由環境變數控制；評測用之訓練期圖譜須設 GRAPH_UNTIL=2026-06-05
+GRAPH_SINCE=2026-06-01 GRAPH_UNTIL=2026-06-05 python -m src.graph_builder --rebuild
 ```
+
+> ⚠️ `GRAPH_UNTIL` 預設為 `2026-06-07`，涵蓋評測之測試日與標註日。**離線評測不得使用該預設值
+> 建出的圖譜**（命題規定使用 test 期資料建圖者該指標項不計分）。`eval/reproduce.sh` 會自行
+> 以訓練期重建，不依賴此快取。
 
 ---
 
@@ -330,7 +369,7 @@ python -m src.graph_builder --rebuild    # 強制重建
 ### EC2 部署
 
 ```bash
-# SSH into EC2 (same VPC as Neptune)
+# SSH into EC2 (t3.large)
 aws ec2-instance-connect ssh --instance-id i-03c39c7e44e7a039d --region us-west-2
 
 # Setup
@@ -338,10 +377,10 @@ cd ~/recommendation-algorithm
 git pull
 pip3.11 install -r requirements.txt
 
-# Set env vars
-export USE_NEPTUNE=true
-export NEPTUNE_ENDPOINT=db-neptune-1.cluster-cl8ocu4ecpw9.us-west-2.neptune.amazonaws.com
-# ... (other env vars)
+# Env vars — 臨時憑證數小時即過期，重啟前務必更新
+export AWS_DEFAULT_REGION=us-west-2
+export AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... AWS_SESSION_TOKEN=...
+export BEDROCK_MODEL_ID=us.anthropic.claude-sonnet-4-6
 
 # Start API
 nohup python3.11 -u -m uvicorn app:app --host 0.0.0.0 --port 8000 > api.log 2>&1 &
@@ -349,6 +388,17 @@ nohup python3.11 -u -m uvicorn app:app --host 0.0.0.0 --port 8000 > api.log 2>&1
 # Build/rebuild graph (background)
 nohup python3.11 -u -m src.graph_builder > graph_build.log 2>&1 &
 ```
+
+### 部署後驗證
+
+```bash
+curl -s -X POST http://<host>:8000/api/v1/jobs/search \
+  -H "Content-Type: application/json" \
+  -d '{"query":"月薪四萬以上的台北兼職"}'
+```
+
+須回傳 10 筆結果。若回傳空陣列，代表 Bedrock 憑證失效導致 LLM 解析退回空白分詞
+（整句被當成單一關鍵字，撈不到任何職缺）—— 更新憑證後重啟即可。
 
 ---
 
@@ -379,24 +429,41 @@ uvicorn app:app --host 0.0.0.0 --port 8000
 
 ## Benchmark 重現步驟
 
+### 一鍵重現（評審執行此指令即可）
+
+```bash
+bash eval/reproduce.sh            # 完整 500 筆查詢
+bash eval/reproduce.sh --quick    # 50 筆，快速驗證流程
+```
+
+此腳本會自動完成：建立虛擬環境 → 產生訓練期熱門度表 → 產生訓練期圖譜 →
+建構帶分級標註之測試集 → 執行所有 ablation 組別 → 輸出報告。
+僅需先將主辦方提供之 CSV 置於 `dataset/`。
+
+### 手動建置正式服務（非評測用）
+
 ```bash
 pip install -r requirements.txt
-python dataset/genViewCount.py
-python dataset/userAnalysis.py
-python -m src.skill_extractor
-python -m src.graph_builder
-python main.py
+python dataset/genViewCount.py       # → 瀏覽次數.csv
+python dataset/userAnalysis.py       # → userBehaviorFeature.csv
+python -m src.skill_extractor        # → job_skills_cache.csv
+python -m src.graph_builder          # → graph_cache.pkl
+python main.py                       # 本機互動式 debug
 ```
 
 ### 效能基準
 
 | 階段 | 典型延遲 | 備註 |
 |------|----------|------|
-| Stage 1 (querytoRequirement) | 1–3s（首次）/ ~0ms（快取） | Sonnet 4；可切換 Haiku 加速 |
+| Stage 1 (querytoRequirement) | 1–3s（首次）/ ~0ms（快取） | Sonnet 4.6；可切換 Haiku 加速 |
 | Stage 2 (grabFromDatabase) | 0.5–2s | DuckDB in-memory |
-| Stage 3 (ranking + Neptune) | 50–200ms | Gremlin 遍歷 |
+| Stage 3 (ranking) | 熱門度 <50ms / 圖譜 50–200ms | 圖譜為 networkx 行程內遍歷 |
 | 端到端（首次） | 2–5s | 瓶頸在 LLM |
 | 端到端（快取命中） | 0.5–2s | 跳過 LLM |
+
+> ⚠️ **記憶體風險**：評測期間觀測到單一發散查詢可回傳逾百萬筆候選（最大 1,149,322 筆），
+> 記憶體峰值達 **6.8 GB**，逼近 EC2 t3.large 的 8 GB 上限。建議於檢索 SQL 加入
+> `ORDER BY score DESC LIMIT 5000`。
 
 ---
 
@@ -410,6 +477,43 @@ python main.py
 bash eval/reproduce.sh            # 完整 500 筆查詢
 bash eval/reproduce.sh --quick    # 50 筆，快速驗證流程
 ```
+
+### 指定單一對照：有 AI vs 無 AI、有圖譜 vs 無圖譜
+
+命題要求之兩組雙重指標對照，可分別以單一指令執行並直接讀出差異：
+
+```bash
+# ① 有生成式 AI vs 無生成式 AI（LLM 語意解析與擴展 開/關）
+python eval/run_ablation.py --arms full,no_llm
+
+# ② 有圖譜 vs 無圖譜（能力知識圖譜 開/關，解析方式固定為規則式以隔離變因）
+python eval/run_ablation.py --arms graph_no_llm,no_llm
+
+# 加上 --limit 50 可快速試跑
+```
+
+輸出為 Markdown 表格（同時寫入 `eval/ABLATION_REPORT.md`），格式如下：
+
+| 設定 | NDCG@10 | vs 基準 | Hit@1 | Hit@10 |
+|---|---:|---:|---:|---:|
+| `no_llm` 移除 LLM（規則式分詞） | 0.0190 | 基準 | 0.0160 | 0.0420 |
+| `full` LLM + 語意擴展 | 0.0118 | −37.9% | 0.0080 | 0.0300 |
+
+**LLM 組不會靜默降級**：`run_ablation.py` 於執行前以 `probe_llm()` 實際呼叫一次 Bedrock，
+失敗即**略過該組並輸出訊息**，而非退回規則式路徑後產出看似有效的數字 ——
+否則「有 AI」與「無 AI」兩組會變成同一件事，得出的結論恰好與本 ablation 欲驗證者相反。
+
+可用組別：
+
+| 組別 | 說明 | 需要 Bedrock |
+|------|------|---|
+| `full` | LLM 解析 + 語意擴展 + 熱門度排序 | ✅ |
+| `no_llm` | 規則式分詞（**無生成式 AI**） | — |
+| `no_expand` | LLM 解析、關閉語意擴展 | ✅ |
+| `hybrid` | 條件式擴展（字面候選不足時才擴展） | ✅ |
+| `graph_no_llm` | 能力知識圖譜排序 + 規則式解析 | — |
+| `graph_interaction` | User–Job 互動圖譜排序 + 規則式解析 | — |
+| `no_rank` | 完全不排序（下界對照） | ✅ |
 
 ### 時序切分
 
@@ -487,16 +591,16 @@ bash eval/reproduce.sh --quick    # 50 筆，快速驗證流程
 
 | 元件 | 模型 / 版本 | 用途 |
 |------|-------------|------|
-| LLM | Claude Sonnet 4 (via AWS Bedrock) | 查詢語意解析 + 技能萃取 |
-| 查詢引擎 | DuckDB 1.3.0 | SQL 篩選 ~1M 職缺 |
-| 圖譜引擎 | Amazon Neptune + Gremlin | 能力知識圖譜遍歷 |
-| 本地圖譜 | networkx 3.4.2 | 開發/測試用 fallback |
+| LLM | Claude Sonnet 4.6 (`us.anthropic.claude-sonnet-4-6`, via AWS Bedrock) | 查詢語意解析 + 技能萃取 |
+| 查詢引擎 | DuckDB 1.3.0 | SQL 篩選 ~1.2M 職缺 |
+| 圖譜引擎 | networkx 3.4.2 | 能力知識圖譜遍歷（**本次實際使用**） |
+| 圖譜引擎（未使用） | Amazon Neptune + Gremlin | 程式碼保留，叢集未部署 |
 
 ### 排序超參數
 
 | 參數 | 值 | 說明 |
 |------|-----|------|
-| Graph weight | 0.7 | final = graph×0.7 + popularity×0.3 |
+| Graph weight | 0.7 | final = graph×0.7 + popularity×0.3（僅 `GRAPH_FOR_*=true` 時生效） |
 | Skill overlap weight | 0.5 | graph_score 中技能重疊佔比 |
 | City match weight | 0.3 | graph_score 中城市匹配佔比 |
 | Co-user weight | 0.2 | graph_score 中協同過濾佔比 |
@@ -525,28 +629,32 @@ recommendation-algorithm/
 │   ├── query_parser.py            # Stage 1: LLM 語意解析
 │   ├── retriever.py               # Stage 2: DuckDB 檢索
 │   ├── ranker.py                  # Stage 3: 排序路由
-│   ├── neptune_client.py          # Neptune 連線管理（IAM SigV4）
-│   ├── graph_builder.py           # 圖譜建構（Neptune + networkx）
+│   ├── neptune_client.py          # Neptune 連線管理（IAM SigV4，本次未使用）
+│   ├── graph_builder.py           # 圖譜建構（networkx → pickle 快取）
 │   ├── graph_ranker.py            # 能力圖譜排序邏輯
 │   ├── skill_extractor.py         # 混合技能萃取（結構化 + LLM）
 │   ├── utils/                     # 工具模組（abbreviations, tag_parser）
 │   └── tests/                     # 單元與整合測試
 ├── eval/                          # 離線評測框架
+│   ├── reproduce.sh               # ★ 一鍵重現所有評測
+│   ├── run_ablation.py            # Ablation 實驗執行器（含 probe_llm 防降級）
+│   ├── metrics.py                 # 評測指標（NDCG/MRR/Hit@K，附 9 項自我驗證）
+│   ├── build_testset.py           # 測試集產生（分級標註）
+│   ├── build_popularity.py        # 訓練期熱門度表（防洩漏）
+│   ├── build_graph_train.py       # 訓練期互動圖譜（防洩漏）
+│   ├── graph_ranker_interaction.py# 互動圖譜排序（評測用，不動 src/）
+│   ├── analyze_strata.py          # 分層分析 + 配對 bootstrap 顯著性檢定
 │   ├── EXPERIMENT_DESIGN.md       # 實驗設計方法
-│   ├── EVALUATION_REPORT.md       # 評測結果報告
-│   ├── ABLATION_REPORT.md         # Ablation study 報告
-│   ├── metrics.py                 # 評測指標（NDCG, MRR, Hit@K）
-│   ├── build_testset.py           # 測試集產生
-│   ├── run_ablation.py            # Ablation 實驗執行器
-│   ├── reproduce.sh               # 一鍵重現所有評測
-│   └── testset.jsonl              # 評測測試集
+│   └── EVALUATION_REPORT.md       # 評測結果報告
+├── 專案白話說明/                  # 非技術背景可讀之專案說明
 ├── infra/                         # AWS 基礎設施 & 部署
 │   ├── cloudformation.yaml        # EC2 + 安全群組（t3.large, port 8000）
 │   ├── deploy-to-ec2.ps1         # PowerShell 部署腳本
 │   └── setup-ec2.sh              # EC2 環境初始化
 ├── 設計文件/                      # 設計文件
+│   ├── graph_schema_and_trace.md  # ★ 圖譜 schema + 遍歷 trace 範例
 │   ├── draft3rewrite.md           # Pipeline 設計參考
-│   └── neptune_graph_design.md    # Neptune 圖譜 schema 設計
+│   └── neptune_graph_design.md    # Neptune schema 設計（未採用之後端）
 ├── .env                           # 環境變數（git-ignored）
 └── requirements.txt               # Python 依賴
 ```
@@ -555,7 +663,11 @@ recommendation-algorithm/
 
 ## 設計文件
 
-- `設計文件/neptune_graph_design.md` — Neptune 能力知識圖譜完整 schema 設計
+- [`設計文件/graph_schema_and_trace.md`](設計文件/graph_schema_and_trace.md) — **節點／邊定義、權重、以及推論時的遍歷 trace 範例**（命題交付項目 4）
+- [`eval/EXPERIMENT_DESIGN.md`](eval/EXPERIMENT_DESIGN.md) — 離線評測之實驗設計與方法
+- [`eval/EVALUATION_REPORT.md`](eval/EVALUATION_REPORT.md) — Ablation 結果、診斷與已知限制
+- [`專案白話說明/`](專案白話說明/) — 非技術背景可讀之完整專案說明
+- `設計文件/neptune_graph_design.md` — Neptune schema 設計（**未採用之後端**，保留供參考）
 - `設計文件/draft3rewrite.md` — Pipeline 三階段設計參考
 - `設計文件/user_behavior_analysis_proposal.md` — 用戶行為分析方案（採納 Option 3）
 
@@ -579,9 +691,9 @@ gremlinpython==3.7.3
 |------|------|
 | `duckdb` | 高速 SQL 查詢引擎（~1M CSV） |
 | `pandas` | 資料載入與預處理 |
-| `boto3` | AWS SDK（Bedrock + Neptune IAM） |
-| `networkx` | 本地圖譜 fallback |
-| `gremlinpython` | Neptune Gremlin 客戶端 |
+| `boto3` | AWS SDK（Bedrock Runtime） |
+| `networkx` | 能力知識圖譜建構與遍歷（**本次實際使用之圖譜引擎**） |
+| `gremlinpython` | Neptune Gremlin 客戶端（`USE_NEPTUNE=true` 時才載入，本次未使用） |
 | `fastapi` + `uvicorn` | Web API |
 | `hypothesis` | Property-based 測試 |
 | `python-dotenv` | 環境變數載入 |
