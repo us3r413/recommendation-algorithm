@@ -177,7 +177,8 @@ def _llm_parse_cached(expanded: str) -> list[str] | None:
     model_id = os.environ.get(
         "BEDROCK_MODEL_ID", "us.anthropic.claude-sonnet-4-6"
     )
-    bedrock = boto3.client("bedrock-runtime")
+    region = os.environ.get("AWS_DEFAULT_REGION", "us-west-2")
+    bedrock = boto3.client("bedrock-runtime", region_name=region)
 
     for _attempt in range(3):
         try:

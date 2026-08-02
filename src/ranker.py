@@ -1,9 +1,12 @@
+import logging
 import os
 
 import pandas as pd
 from dotenv import load_dotenv
 
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 FEATURES_PATH = "dataset/userBehaviorFeature.csv"
 _features_cache: pd.DataFrame | None = None
@@ -128,22 +131,28 @@ def ranking(candidates: list[dict], talent_no: int) -> list[dict]:
         if GRAPH_FOR_ANONYMOUS:
             try:
                 from src.graph_ranker import graph_ranking_anonymous
-                return graph_ranking_anonymous(candidates)
-            except Exception:
-                pass
+                result = graph_ranking_anonymous(candidates)
+                logger.info("[Ranking] path=graph_anonymous, candidates=%d, results=%d", len(candidates), len(result))
+                return result
+            except Exception as e:
+                logger.warning("[Ranking] graph_anonymous failed, falling back to popularity: %s", e)
+        logger.info("[Ranking] path=popularity_anonymous, candidates=%d", len(candidates))
         return _popularity_rank(candidates, raw_fields)
 
-    # Graph RAG path: use Neptune collaborative filtering for signed-in users
+    # Graph path: use 2-hop CF for signed-in users
     if USE_GRAPH_RAG:
         try:
             from src.graph_ranker import graph_ranking
-            return graph_ranking(candidates, talent_no)
-        except Exception:
-            # Neptune unavailable or import error — fall through to feature-based
-            pass
+            result = graph_ranking(candidates, talent_no)
+            logger.info("[Ranking] path=graph_signed_in, talent_no=%d, candidates=%d, results=%d", talent_no, len(candidates), len(result))
+            return result
+        except Exception as e:
+            logger.warning("[Ranking] graph_signed_in failed, falling back to feature-based: %s", e)
 
     feature = _get_user_feature(talent_no)
     if feature is None or feature.get("is_cold_start", True):
+        logger.info("[Ranking] path=popularity_cold_start, talent_no=%d, candidates=%d", talent_no, len(candidates))
         return _popularity_rank(candidates, raw_fields)
 
+    logger.info("[Ranking] path=personalised, talent_no=%d, candidates=%d", talent_no, len(candidates))
     return _personalised_rank(candidates, feature, raw_fields)
