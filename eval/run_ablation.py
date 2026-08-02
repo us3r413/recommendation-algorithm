@@ -52,6 +52,16 @@ from eval.metrics import evaluate, evaluate_per_query  # noqa: E402
 # production full-week graph must not be used here).
 GRAPH_TRAIN = os.path.join(ROOT, "dataset", "graph_cache_train.pkl")
 
+# The shipped ability (skill) knowledge graph, built by src/graph_builder.py.
+# It already filters events to <= 2026-06-05, matching this harness's split.
+#
+# NOTE: not the team's dataset/ability_graph_cache.pkl. That cache was built
+# with the shipped default GRAPH_UNTIL=2026-06-07, so its user->job edges span
+# the test day (06-06) and label day (06-07) — using it here would breach the
+# brief's leakage rule. This file keeps that graph's skill/city/category layer
+# and replaces the interaction edges with the 06-01..06-05 set.
+ABILITY_GRAPH = os.path.join(ROOT, "dataset", "ability_graph_trainclean.pkl")
+
 # ---------------------------------------------------------------------------
 # Arm definitions
 # ---------------------------------------------------------------------------
@@ -66,9 +76,17 @@ ARMS: dict[str, dict] = {
     # Diagnostic: is CodeAlike expansion helping or flooding the candidate set?
     "no_expand":  dict(llm=True,  expand=False, graph=False, rank="popularity",
                        desc="移除語意擴展（僅原始關鍵字）"),
-    # Interaction-graph ranking instead of raw popularity
+    # The shipped ability (skill) knowledge graph — src/graph_ranker.py
     "graph":      dict(llm=True,  expand=True,  graph=True,  rank="popularity",
-                       desc="啟用互動圖譜排序"),
+                       desc="啟用能力圖譜排序（技能知識圖譜）"),
+    # Same, with rule-based parsing: isolates the graph's contribution from the
+    # LLM's, and needs no Bedrock credentials.
+    "graph_no_llm": dict(llm=False, expand=True, graph=True, rank="popularity",
+                         desc="能力圖譜排序 + 規則式解析"),
+    # Alternative graph structure for comparison: user–job interaction graph
+    "graph_interaction": dict(llm=False, expand=True, graph=True,
+                              rank="popularity", interaction_graph=True,
+                              desc="互動圖譜排序 + 規則式解析"),
     # Control: no ranking at all — isolates what the ranker contributes
     "no_rank":    dict(llm=True,  expand=True,  graph=False, rank="none",
                        desc="不排序（檢索原始順序，對照組）"),
@@ -215,14 +233,30 @@ def run_arm(name: str, cfg: dict, queries: list[dict], use_talent: bool,
 
     # --- graph toggle -------------------------------------------------------
     # ranking() reads these globals at call time and lazily imports
-    # src.graph_ranker. That module now targets the ability (skill) graph, which
-    # the team dropped; the interaction-graph arm is served instead from
-    # eval/graph_ranker_interaction.py, injected here so src/ stays untouched.
+    # src.graph_ranker.
     K.GRAPH_FOR_ANONYMOUS = bool(cfg["graph"])
     K.USE_GRAPH_RAG = bool(cfg["graph"])
     if cfg["graph"]:
-        import eval.graph_ranker_interaction as GRI
-        sys.modules["src.graph_ranker"] = GRI
+        if cfg.get("interaction_graph"):
+            # Alternative graph structure: the earlier user–job interaction
+            # graph, kept as a comparison point. Injected rather than imported
+            # so src/ is never modified for evaluation purposes.
+            import eval.graph_ranker_interaction as GRI
+            sys.modules["src.graph_ranker"] = GRI
+        else:
+            # The shipped ability (skill) knowledge graph. Neptune is only the
+            # storage backend — src/graph_ranker.py falls back to a local
+            # networkx traversal, so the deployed ranking logic is what gets
+            # measured here, not a stand-in.
+            os.environ["USE_NEPTUNE"] = "false"
+            # graph_ranker reaches the graph through graph_builder.get_graph(),
+            # which reads GRAPH_CACHE_PATH. Repoint it at the train-only build
+            # so the evaluation never touches the leaked production cache.
+            import src.graph_builder as GB
+            GB.GRAPH_CACHE_PATH = ABILITY_GRAPH
+            GB._graph_cache = None
+            sys.modules.pop("src.graph_ranker", None)
+            import src.graph_ranker  # noqa: F401
 
     hybrid = cfg.get("hybrid", False)
     if hybrid:
@@ -329,10 +363,15 @@ def main() -> int:
     for name in requested:
         cfg = ARMS[name]
         log(f"--- arm: {name} — {cfg['desc']}")
-        if cfg["graph"] and not os.path.exists(GRAPH_TRAIN):
-            log(f"    SKIPPED: {GRAPH_TRAIN} not built "
-                "(python eval/build_graph_train.py)")
-            continue
+        if cfg["graph"]:
+            needed, how = ((GRAPH_TRAIN, "python eval/build_graph_train.py")
+                           if cfg.get("interaction_graph")
+                           else (ABILITY_GRAPH,
+                                 "python -m src.skill_extractor && "
+                                 "python -m src.graph_builder"))
+            if not os.path.exists(needed):
+                log(f"    SKIPPED: {os.path.basename(needed)} not built ({how})")
+                continue
         res, secs = run_arm(name, cfg, queries, args.use_talent, tag_cache)
         m = evaluate(res, qrels, args.k, args.gain)
         per_query[name] = evaluate_per_query(res, qrels, args.k, args.gain)
