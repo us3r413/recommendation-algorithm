@@ -7,8 +7,16 @@ Endpoints:
   GET  /health              — health check
 """
 
+import logging
 import uuid
 from contextlib import asynccontextmanager
+
+from dotenv import load_dotenv
+
+load_dotenv()
+
+# Configure logging so graph/ranker messages are visible in uvicorn output
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field

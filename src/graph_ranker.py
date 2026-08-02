@@ -1,543 +1,197 @@
 """
-graph_ranker.py — Ability-based graph ranking using Neptune (Gremlin) or networkx.
+graph_ranker.py — Interaction-graph ranking using 2-hop collaborative filtering.
 
 Two ranking modes:
 
-1. Signed-in users (ability-based collaborative filtering):
-     User → HAS_SKILL → Skills
-     Skills ← REQUIRES ← Candidate Jobs (skill overlap scoring)
-     + User → PREFERS_CITY match with Job → LOCATED_IN → City
-     + Co-user signal: users with similar skills also interacted with these jobs
+1. Signed-in users (2-hop collaborative filtering):
+     you → your seed jobs → co-users who also interacted → their other jobs
+     Accumulates edge weights along the path as the graph score.
 
-2. Anonymous users (query-skill matching):
-     Query tags → matched Skills
-     Skills ← REQUIRES ← Candidate Jobs (skill overlap scoring)
-     + City match from query tags
+2. Anonymous users (weighted in-degree / "crowd wisdom"):
+     Total weighted interactions each candidate job received from all users.
+     Jobs with more (and heavier) interactions score higher.
 
-Formula:
-    graph_score = skill_overlap × 0.5 + city_match × 0.3 + co_user_signal × 0.2
-    final_score = graph_score × 0.7 + normalised_popularity × 0.3
+Blending formula:
+    final = relevance_hits (primary sort)
+          + (normalised_graph × 0.7 + normalised_popularity × 0.3) (secondary)
 
-Falls back to popularity ranking if graph provides no signal.
+Falls back to pure popularity ranking if the graph provides no signal.
 
-Dual-target:
-  - USE_NEPTUNE=true  → Gremlin traversal queries against Neptune
-  - USE_NEPTUNE=false → networkx traversal (local fallback)
+Based on eval/graph_ranker_interaction.py — the proven approach that actually
+produces real ranking signals from the User→Job interaction graph.
 """
 
-import os
+from __future__ import annotations
+
+import logging
 from collections import defaultdict
 
-import pandas as pd
-from dotenv import load_dotenv
+import networkx as nx
 
-load_dotenv()
-
-USE_NEPTUNE = os.environ.get("USE_NEPTUNE", "false").lower() in ("true", "1", "yes")
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
 
-# Blending weights: graph vs popularity
+# Blend weights: graph signal vs popularity
 GRAPH_WEIGHT = 0.7
 POPULARITY_WEIGHT = 0.3
 
-# Graph score component weights
-SKILL_OVERLAP_WEIGHT = 0.5
-CITY_MATCH_WEIGHT = 0.3
-CO_USER_WEIGHT = 0.2
-
-# Traversal limits
-MAX_CO_USERS = 50
+# Fan-out caps to bound worst-case traversal cost per query
+MAX_CO_USERS_PER_JOB = 30
 MAX_SEED_JOBS = 50
 
 
 # ---------------------------------------------------------------------------
-# NetworkX-based ranking (local fallback)
+# Node ID helpers (must match graph_builder.py)
 # ---------------------------------------------------------------------------
 
 
-def _nx_skill_overlap_scores(
-    G,
-    user_skills: dict[str, float],
-    candidate_job_ids: set[int],
+def _user_node(talent_no: int) -> str:
+    return f"user:{talent_no}"
+
+
+def _job_node(jid: int) -> str:
+    return f"job:{jid}"
+
+
+# ---------------------------------------------------------------------------
+# Signed-in users: 2-hop collaborative filtering
+# ---------------------------------------------------------------------------
+
+
+def _signed_in_scores(
+    G: nx.DiGraph, talent_no: int, candidate_ids: set[int]
 ) -> dict[int, float]:
-    """Score candidates by skill overlap with user's skills (networkx).
+    """Compute graph scores via 2-hop CF traversal.
 
-    For each candidate job, compute:
-      overlap = sum of user_skill_strength for each shared skill / total job skills
+    Traversal: you → your seed jobs → co-users → their other jobs (if in candidates)
 
-    Returns dict mapping job_id → normalised overlap score [0, 1].
+    The score for each candidate accumulates the product of edge weights along
+    the co-user path, giving higher scores to jobs that many similar users
+    interacted with heavily.
     """
-    from src.graph_builder import job_id, get_job_skills
-
-    scores: dict[int, float] = {}
-    if not user_skills:
-        return scores
-
-    for jid in candidate_job_ids:
-        jnode = job_id(jid)
-        if jnode not in G:
-            continue
-        job_skills = get_job_skills(G, jnode)
-        if not job_skills:
-            continue
-
-        overlap_score = 0.0
-        for skill in job_skills:
-            if skill in user_skills:
-                overlap_score += user_skills[skill]
-
-        # Normalise by number of job skills
-        scores[jid] = overlap_score / len(job_skills)
-
-    return scores
-
-
-def _nx_city_match_scores(
-    G,
-    user_cities: dict[str, float],
-    candidates: list[dict],
-) -> dict[int, float]:
-    """Score candidates by city match with user's preferred cities (networkx).
-
-    Returns dict mapping job_id → city match score [0, 1].
-    """
-    scores: dict[int, float] = {}
-    if not user_cities:
-        return scores
-
-    for c in candidates:
-        jid = c.get("職缺編號")
-        if jid is None:
-            continue
-        job_city = c.get("工作城市", "")
-        if job_city in user_cities:
-            scores[int(jid)] = user_cities[job_city]
-
-    return scores
-
-
-def _nx_co_user_scores(
-    G,
-    talent_no: int,
-    candidate_job_ids: set[int],
-) -> dict[int, float]:
-    """Score candidates by co-user collaborative filtering (networkx).
-
-    Finds users who share skills with the target user, then checks
-    which candidate jobs those co-users interacted with.
-
-    Returns dict mapping job_id → co-user score (normalised).
-    """
-    from src.graph_builder import user_id, job_id, get_user_skills
-
-    uid = user_id(talent_no)
+    uid = _user_node(talent_no)
     if uid not in G:
         return {}
 
-    # Get target user's skills
-    target_skills = set(get_user_skills(G, uid).keys())
-    if not target_skills:
+    # Get user's seed jobs (jobs they interacted with), sorted by weight
+    seeds = list(G.successors(uid))
+    if not seeds:
         return {}
+    if len(seeds) > MAX_SEED_JOBS:
+        seeds.sort(key=lambda j: G.edges[uid, j].get("weight", 1), reverse=True)
+        seeds = seeds[:MAX_SEED_JOBS]
+    seed_set = set(seeds)
 
-    # Find co-users: other users who share at least one skill
-    co_users: set[str] = set()
-    from src.graph_builder import skill_id
-    for skill in target_skills:
-        snode = skill_id(skill)
-        if snode not in G:
-            continue
-        for pred in G.predecessors(snode):
-            edge_data = G.edges[pred, snode]
-            if edge_data.get("edge_type") == "HAS_SKILL" and pred != uid:
-                co_users.add(pred)
-                if len(co_users) >= MAX_CO_USERS:
-                    break
-        if len(co_users) >= MAX_CO_USERS:
-            break
+    scores: dict[int, float] = defaultdict(float)
+    for seed in seeds:
+        # Find co-users who also interacted with this seed job
+        co_users = []
+        for pred in G.predecessors(seed):
+            if pred == uid or G.nodes[pred].get("node_type") != "User":
+                continue
+            co_users.append(pred)
+            if len(co_users) >= MAX_CO_USERS_PER_JOB:
+                break
 
-    if not co_users:
-        return {}
+        # For each co-user, check their other jobs
+        for co_user in co_users:
+            w_seed = G.edges[co_user, seed].get("weight", 1)
+            for co_job in G.successors(co_user):
+                if co_job in seed_set or not co_job.startswith("job:"):
+                    continue
+                try:
+                    jid = int(co_job.split(":", 1)[1])
+                except (ValueError, IndexError):
+                    continue
+                if jid in candidate_ids:
+                    scores[jid] += w_seed * G.edges[co_user, co_job].get("weight", 1)
 
-    # For each co-user, find which candidate jobs they interacted with
-    job_scores: dict[int, float] = defaultdict(float)
-    for co_uid in co_users:
-        for successor in G.successors(co_uid):
-            edge_data = G.edges[co_uid, successor]
-            if edge_data.get("edge_type") in ("VIEWED", "APPLIED"):
-                node_data = G.nodes.get(successor, {})
-                jid_val = node_data.get("jobId")
-                if jid_val and int(jid_val) in candidate_job_ids:
-                    weight = edge_data.get("weight", 1)
-                    job_scores[int(jid_val)] += weight
-
-    return dict(job_scores)
+    return dict(scores)
 
 
-def _nx_query_skill_scores(
-    G,
-    query_skills: list[str],
-    candidate_job_ids: set[int],
-) -> dict[int, float]:
-    """Score candidates by overlap with query-derived skills (for anonymous users).
+# ---------------------------------------------------------------------------
+# Anonymous users: weighted in-degree ("crowd wisdom")
+# ---------------------------------------------------------------------------
 
-    For each candidate, count how many of the query skills it requires.
-    Returns dict mapping job_id → score [0, 1].
+
+def _anonymous_scores(G: nx.DiGraph, candidate_ids: set[int]) -> dict[int, float]:
+    """Total weighted interactions each candidate job received from all users.
+
+    Jobs that more users viewed/applied to (especially applied, weight=3) get
+    higher graph scores.
     """
-    from src.graph_builder import job_id, get_job_skills
-
-    if not query_skills:
-        return {}
-
     scores: dict[int, float] = {}
-    query_skill_set = set(query_skills)
-
-    for jid in candidate_job_ids:
-        jnode = job_id(jid)
+    for jid in candidate_ids:
+        jnode = _job_node(jid)
         if jnode not in G:
             continue
-        job_skills = get_job_skills(G, jnode)
-        if not job_skills:
-            continue
-        overlap = len(job_skills & query_skill_set)
-        if overlap > 0:
-            scores[jid] = overlap / len(query_skill_set)
-
+        total = 0.0
+        for pred in G.predecessors(jnode):
+            total += G.edges[pred, jnode].get("weight", 1)
+        if total > 0:
+            scores[jid] = total
     return scores
 
 
 # ---------------------------------------------------------------------------
-# Neptune/Gremlin-based ranking
+# Blending: graph score + popularity → final ranking
 # ---------------------------------------------------------------------------
 
 
-def _filter_existing_vertex_ids(g, vertex_ids: list[str]) -> list[str]:
-    """Filter a list of vertex IDs to only those that exist in Neptune.
+def _blend(candidates: list[dict], graph_scores: dict[int, float]) -> list[dict]:
+    """Blend graph scores with popularity, respecting relevance_hits as primary sort.
 
-    Queries Neptune in batches to avoid oversized requests.
-    Returns only the IDs that actually exist as vertices.
+    final_score = normalised_graph × 0.7 + normalised_popularity × 0.3
+    Primary sort: relevance_hits (more matched terms = higher priority)
+    Secondary sort: final_score
+
+    Falls back to pure popularity if graph_scores is empty.
     """
-    from gremlin_python.process.graph_traversal import __ as AnonymousTraversal
+    raw_fields = [k for k in candidates[0].keys() if k not in ("score", "relevance_hits")]
 
-    existing: list[str] = []
-    batch_size = 200
-    for i in range(0, len(vertex_ids), batch_size):
-        batch = vertex_ids[i : i + batch_size]
-        try:
-            # Use hasId() which safely filters without throwing on missing IDs
-            found = g.V().hasId(*batch).id_().toList()
-            existing.extend(found)
-        except Exception:
-            # If batch query fails, try individual IDs
-            for vid in batch:
-                try:
-                    if g.V(vid).hasNext():
-                        existing.append(vid)
-                except Exception:
-                    pass
-    return existing
-
-
-def _gremlin_skill_overlap_scores(
-    g,
-    talent_no: int,
-    candidate_job_ids: set[int],
-) -> dict[int, float]:
-    """Score candidates by skill overlap using Gremlin traversal.
-
-    Traversal:
-      User → HAS_SKILL → Skill ← REQUIRES ← Job (in candidates)
-      Group by job, count overlapping skills.
-    """
-    from src.graph_builder import user_id
-
-    uid = user_id(talent_no)
-
-    # Check that the user vertex exists
-    try:
-        if not g.V(uid).hasNext().next():
-            return {}
-    except Exception:
-        return {}
-
-    candidate_ids = [f"job:{jid}" for jid in candidate_job_ids]
-    # Filter to only job vertices that exist in Neptune
-    candidate_ids = _filter_existing_vertex_ids(g, candidate_ids)
-    if not candidate_ids:
-        return {}
-
-    try:
-        # Get user's skills and find candidate jobs that require them
-        results = (
-            g.V(uid)
-            .outE("HAS_SKILL").inV().as_("skill")
-            .inE("REQUIRES").outV()
-            .hasId(*candidate_ids)
-            .group()
-            .by("jobId")
-            .by(g.select("skill").count())  # type: ignore
-            .next()
+    # No graph signal → popularity fallback
+    if not graph_scores:
+        ordered = sorted(
+            candidates,
+            key=lambda c: (
+                c.get("relevance_hits", 0),
+                c.get("score", 0.0),
+                c.get("職缺最後修改時間", ""),
+            ),
+            reverse=True,
         )
+        return [{f: c[f] for f in raw_fields} for c in ordered[:10]]
 
-        if isinstance(results, dict):
-            max_score = max(results.values()) if results else 1
-            return {int(k): v / max_score for k, v in results.items()}
-    except Exception:
-        pass
+    max_g = max(graph_scores.values()) or 1.0
+    max_p = max((c.get("score", 0.0) for c in candidates), default=1.0) or 1.0
 
-    return {}
+    def key(c: dict):
+        jid = c.get("職缺編號")
+        g = graph_scores.get(int(jid), 0.0) / max_g if jid is not None else 0.0
+        p = c.get("score", 0.0) / max_p
+        return (c.get("relevance_hits", 0), g * GRAPH_WEIGHT + p * POPULARITY_WEIGHT)
 
-
-def _gremlin_co_user_scores(
-    g,
-    talent_no: int,
-    candidate_job_ids: set[int],
-) -> dict[int, float]:
-    """Score candidates using co-user signal via Gremlin.
-
-    Traversal:
-      User → HAS_SKILL → Skill ← HAS_SKILL ← OtherUser → APPLIED/VIEWED → Job (in candidates)
-    """
-    from src.graph_builder import user_id
-
-    uid = user_id(talent_no)
-
-    # Check that the user vertex exists
-    try:
-        if not g.V(uid).hasNext().next():
-            return {}
-    except Exception:
-        return {}
-
-    candidate_ids = [f"job:{jid}" for jid in candidate_job_ids]
-    # Filter to only job vertices that exist in Neptune
-    candidate_ids = _filter_existing_vertex_ids(g, candidate_ids)
-    if not candidate_ids:
-        return {}
-
-    try:
-        results = (
-            g.V(uid)
-            .out("HAS_SKILL")
-            .in_("HAS_SKILL")
-            .where(g.P.neq(uid))  # type: ignore
-            .limit(MAX_CO_USERS)
-            .outE("APPLIED", "VIEWED")
-            .inV()
-            .hasId(*candidate_ids)
-            .groupCount()
-            .by("jobId")
-            .next()
-        )
-
-        if isinstance(results, dict):
-            return {int(k): float(v) for k, v in results.items()}
-    except Exception:
-        pass
-
-    return {}
-
-
-def _gremlin_query_skill_scores(
-    g,
-    query_skills: list[str],
-    candidate_job_ids: set[int],
-) -> dict[int, float]:
-    """Score candidates by query skill overlap using Gremlin (anonymous users).
-
-    Traversal:
-      Skill (matching query) ← REQUIRES ← Job (in candidates)
-      Group by job, count matching skills.
-    """
-    from src.graph_builder import skill_id
-
-    skill_ids = [skill_id(s) for s in query_skills]
-    # Filter to only skill vertices that exist
-    skill_ids = _filter_existing_vertex_ids(g, skill_ids)
-    if not skill_ids:
-        return {}
-
-    candidate_ids = [f"job:{jid}" for jid in candidate_job_ids]
-    # Filter to only job vertices that exist in Neptune
-    candidate_ids = _filter_existing_vertex_ids(g, candidate_ids)
-    if not candidate_ids:
-        return {}
-
-    try:
-        results = (
-            g.V(*skill_ids)
-            .inE("REQUIRES").outV()
-            .hasId(*candidate_ids)
-            .groupCount()
-            .by("jobId")
-            .next()
-        )
-
-        if isinstance(results, dict):
-            max_score = max(results.values()) if results else 1
-            return {int(k): v / max_score for k, v in results.items()}
-    except Exception:
-        pass
-
-    return {}
+    ordered = sorted(candidates, key=key, reverse=True)
+    return [{f: c[f] for f in raw_fields} for c in ordered[:10]]
 
 
 # ---------------------------------------------------------------------------
-# Public API: graph_ranking (signed-in users)
+# Public API — called from src/ranker.py
 # ---------------------------------------------------------------------------
 
 
 def graph_ranking(candidates: list[dict], talent_no: int) -> list[dict]:
-    """Rank candidates using ability-based graph collaborative filtering.
+    """Rank candidates for a signed-in user using 2-hop collaborative filtering.
 
-    For signed-in users:
-      graph_score = skill_overlap × 0.5 + city_match × 0.3 + co_user × 0.2
-      final_score = graph_score × 0.7 + normalised_popularity × 0.3
-
-    Falls back to pure popularity ranking if graph provides no signal.
-
-    Args:
-        candidates: List of candidate dicts from grabFromDatabase(), each
-                    containing all 職缺.csv columns plus "score" (popularity).
-        talent_no: The signed-in user's ID (must be != 0).
-
-    Returns:
-        Top 10 candidates ranked by blended score, with "score" field stripped.
-    """
-    if not candidates:
-        return []
-
-    raw_fields = [k for k in candidates[0].keys() if k not in ("score", "relevance_hits")]
-
-    # Build candidate lookup
-    candidate_map: dict[int, dict] = {}
-    for c in candidates:
-        jid = c.get("職缺編號")
-        if jid is not None:
-            candidate_map[int(jid)] = c
-    candidate_job_ids = set(candidate_map.keys())
-
-    # Get graph scores based on backend
-    skill_scores: dict[int, float] = {}
-    city_scores: dict[int, float] = {}
-    co_user_scores: dict[int, float] = {}
-
-    if USE_NEPTUNE:
-        try:
-            from src.neptune_client import get_traversal, NeptuneUnavailable
-            g = get_traversal()
-            skill_scores = _gremlin_skill_overlap_scores(g, talent_no, candidate_job_ids)
-            co_user_scores = _gremlin_co_user_scores(g, talent_no, candidate_job_ids)
-            # City match: still done locally (simple dict lookup)
-            from src.graph_builder import get_graph, user_id, get_user_preferred_cities
-            G = get_graph()
-            uid = user_id(talent_no)
-            user_cities = get_user_preferred_cities(G, uid)
-            city_scores = _nx_city_match_scores(G, user_cities, candidates)
-        except Exception:
-            # Fall through to networkx
-            USE_NEPTUNE_FALLBACK = True
-        else:
-            USE_NEPTUNE_FALLBACK = False
-    else:
-        USE_NEPTUNE_FALLBACK = True
-
-    if not USE_NEPTUNE or (USE_NEPTUNE and "USE_NEPTUNE_FALLBACK" in dir() and USE_NEPTUNE_FALLBACK):
-        # NetworkX fallback
-        try:
-            from src.graph_builder import get_graph, user_id, get_user_skills, get_user_preferred_cities
-            G = get_graph()
-            uid = user_id(talent_no)
-
-            user_skills = get_user_skills(G, uid)
-            user_cities = get_user_preferred_cities(G, uid)
-
-            skill_scores = _nx_skill_overlap_scores(G, user_skills, candidate_job_ids)
-            city_scores = _nx_city_match_scores(G, user_cities, candidates)
-            co_user_scores = _nx_co_user_scores(G, talent_no, candidate_job_ids)
-        except Exception:
-            skill_scores = {}
-            city_scores = {}
-            co_user_scores = {}
-
-    # If no graph signal at all → pure popularity fallback
-    if not skill_scores and not city_scores and not co_user_scores:
-        sorted_candidates = sorted(
-            candidates,
-            key=lambda c: (c.get("relevance_hits", 0), c.get("score", 0.0), c.get("職缺最後修改時間", "")),
-            reverse=True,
-        )
-        top10 = sorted_candidates[:10]
-        return [{f: c[f] for f in raw_fields} for c in top10]
-
-    # Normalise each component
-    def _normalise(scores: dict[int, float]) -> dict[int, float]:
-        if not scores:
-            return {}
-        max_val = max(scores.values())
-        if max_val == 0:
-            return {}
-        return {k: v / max_val for k, v in scores.items()}
-
-    norm_skill = _normalise(skill_scores)
-    norm_city = _normalise(city_scores)
-    norm_co_user = _normalise(co_user_scores)
-
-    # Normalise popularity
-    max_pop = max((c.get("score", 0.0) for c in candidates), default=1.0)
-    if max_pop == 0:
-        max_pop = 1.0
-
-    # Compute blended final score
-    def final_score(c: dict) -> tuple:
-        jid = c.get("職缺編號")
-        if jid is None:
-            return (0, 0.0)
-        jid = int(jid)
-
-        g_skill = norm_skill.get(jid, 0.0)
-        g_city = norm_city.get(jid, 0.0)
-        g_co_user = norm_co_user.get(jid, 0.0)
-
-        graph_score = (
-            g_skill * SKILL_OVERLAP_WEIGHT
-            + g_city * CITY_MATCH_WEIGHT
-            + g_co_user * CO_USER_WEIGHT
-        )
-
-        pop_score = c.get("score", 0.0) / max_pop
-        combined = graph_score * GRAPH_WEIGHT + pop_score * POPULARITY_WEIGHT
-
-        # Primary sort: relevance_hits, secondary: combined score
-        return (c.get("relevance_hits", 0), combined)
-
-    sorted_candidates = sorted(candidates, key=final_score, reverse=True)
-    top10 = sorted_candidates[:10]
-    return [{f: c[f] for f in raw_fields} for c in top10]
-
-
-# ---------------------------------------------------------------------------
-# Public API: graph_ranking_anonymous (anonymous users)
-# ---------------------------------------------------------------------------
-
-
-def graph_ranking_anonymous(
-    candidates: list[dict],
-    query_skills: list[str] | None = None,
-) -> list[dict]:
-    """Rank candidates for anonymous users using query-skill graph matching.
-
-    For anonymous users:
-      graph_score = query_skill_overlap × 0.7 + city_match × 0.3
-      final_score = graph_score × 0.7 + normalised_popularity × 0.3
-
-    If no query_skills provided, falls back to pure popularity.
+    Loads the interaction graph from graph_builder, computes CF scores for
+    candidate jobs, then blends with popularity.
 
     Args:
         candidates: List of candidate dicts from grabFromDatabase().
-        query_skills: Skills extracted from the query (from querytoRequirement tags).
+        talent_no: The signed-in user's ID (must be != 0).
 
     Returns:
         Top 10 candidates ranked by blended score.
@@ -545,78 +199,64 @@ def graph_ranking_anonymous(
     if not candidates:
         return []
 
-    raw_fields = [k for k in candidates[0].keys() if k not in ("score", "relevance_hits")]
+    candidate_ids = {
+        int(c["職缺編號"]) for c in candidates if c.get("職缺編號") is not None
+    }
 
-    # If no skills to match on, use popularity
-    if not query_skills:
-        sorted_candidates = sorted(
-            candidates,
-            key=lambda c: (c.get("relevance_hits", 0), c.get("score", 0.0), c.get("職缺最後修改時間", "")),
-            reverse=True,
+    try:
+        from src.graph_builder import get_graph
+
+        G = get_graph()
+        logger.info(
+            "[GraphRanker] signed_in: talent_no=%d, graph nodes=%d, edges=%d, candidates=%d",
+            talent_no, G.number_of_nodes(), G.number_of_edges(), len(candidate_ids),
         )
-        top10 = sorted_candidates[:10]
-        return [{f: c[f] for f in raw_fields} for c in top10]
-
-    # Build candidate set
-    candidate_job_ids: set[int] = set()
-    for c in candidates:
-        jid = c.get("職缺編號")
-        if jid is not None:
-            candidate_job_ids.add(int(jid))
-
-    # Get query-skill overlap scores
-    query_skill_scores: dict[int, float] = {}
-
-    if USE_NEPTUNE:
-        try:
-            from src.neptune_client import get_traversal
-            g = get_traversal()
-            query_skill_scores = _gremlin_query_skill_scores(g, query_skills, candidate_job_ids)
-        except Exception:
-            pass
-
-    if not query_skill_scores:
-        # NetworkX fallback
-        try:
-            from src.graph_builder import get_graph
-            G = get_graph()
-            query_skill_scores = _nx_query_skill_scores(G, query_skills, candidate_job_ids)
-        except Exception:
-            pass
-
-    # If no graph signal → popularity fallback
-    if not query_skill_scores:
-        sorted_candidates = sorted(
-            candidates,
-            key=lambda c: (c.get("relevance_hits", 0), c.get("score", 0.0), c.get("職缺最後修改時間", "")),
-            reverse=True,
+        scores = _signed_in_scores(G, talent_no, candidate_ids)
+        logger.info(
+            "[GraphRanker] signed_in: jobs_with_signal=%d / %d",
+            len(scores), len(candidate_ids),
         )
-        top10 = sorted_candidates[:10]
-        return [{f: c[f] for f in raw_fields} for c in top10]
+    except Exception as e:
+        logger.warning("[GraphRanker] signed_in failed: %s", e)
+        scores = {}
 
-    # Normalise
-    max_skill = max(query_skill_scores.values()) if query_skill_scores else 1.0
-    if max_skill == 0:
-        max_skill = 1.0
+    return _blend(candidates, scores)
 
-    max_pop = max((c.get("score", 0.0) for c in candidates), default=1.0)
-    if max_pop == 0:
-        max_pop = 1.0
 
-    def final_score(c: dict) -> tuple:
-        jid = c.get("職缺編號")
-        if jid is None:
-            return (0, 0.0)
-        jid = int(jid)
+def graph_ranking_anonymous(candidates: list[dict]) -> list[dict]:
+    """Rank candidates for an anonymous user using weighted in-degree.
 
-        g_skill = query_skill_scores.get(jid, 0.0) / max_skill
-        graph_score = g_skill  # For anonymous, skill overlap is the primary signal
+    Jobs with more total user interactions (weighted: apply=3, view=1) get
+    boosted relative to their popularity score.
 
-        pop_score = c.get("score", 0.0) / max_pop
-        combined = graph_score * GRAPH_WEIGHT + pop_score * POPULARITY_WEIGHT
+    Args:
+        candidates: List of candidate dicts from grabFromDatabase().
 
-        return (c.get("relevance_hits", 0), combined)
+    Returns:
+        Top 10 candidates ranked by blended score.
+    """
+    if not candidates:
+        return []
 
-    sorted_candidates = sorted(candidates, key=final_score, reverse=True)
-    top10 = sorted_candidates[:10]
-    return [{f: c[f] for f in raw_fields} for c in top10]
+    candidate_ids = {
+        int(c["職缺編號"]) for c in candidates if c.get("職缺編號") is not None
+    }
+
+    try:
+        from src.graph_builder import get_graph
+
+        G = get_graph()
+        logger.info(
+            "[GraphRanker] anonymous: graph nodes=%d, edges=%d, candidates=%d",
+            G.number_of_nodes(), G.number_of_edges(), len(candidate_ids),
+        )
+        scores = _anonymous_scores(G, candidate_ids)
+        logger.info(
+            "[GraphRanker] anonymous: jobs_with_signal=%d / %d",
+            len(scores), len(candidate_ids),
+        )
+    except Exception as e:
+        logger.warning("[GraphRanker] anonymous failed: %s", e)
+        scores = {}
+
+    return _blend(candidates, scores)

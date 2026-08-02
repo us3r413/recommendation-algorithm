@@ -1,14 +1,18 @@
 """
-graph_builder.py — Build the interaction graph directly from raw CSV logs.
+graph_builder.py — Build the user–job interaction graph from raw CSV logs.
 
-Based on eval/build_graph_train.py. Reads raw behaviour logs (職缺瀏覽, 主動應徵)
-directly instead of the derived userBehaviorEvents.csv, giving explicit control
-over the date window used for graph construction.
-
-Graph structure:
-  - User nodes: node_type="User", talentNo
-  - Job nodes:  node_type="Job", job_id, city, category_mid, salary_lower
+Graph structure (simple and effective):
+  - User nodes: node_type="User", talentNo=<int>
+  - Job nodes:  node_type="Job", job_id=<int>, city=<str>, category_mid=<str>
   - Edges:      user→job with aggregated weight (view=1, apply=3)
+
+This is a pure interaction graph — no skill/category/city sub-nodes. Ranking
+signals come from 2-hop collaborative filtering (signed-in) and weighted
+in-degree (anonymous), both of which only need User→Job edges.
+
+Based on eval/build_graph_train.py. The production graph uses the full date
+window (GRAPH_SINCE..GRAPH_UNTIL from .env); the eval script uses a restricted
+window to avoid data leakage.
 
 Usage:
     # Build graph locally (uses pickle cache):
@@ -69,21 +73,6 @@ def job_id(jid: int) -> str:
     return f"job:{jid}"
 
 
-def skill_id(name: str) -> str:
-    """Create a unique node ID for a skill."""
-    return f"skill:{name}"
-
-
-def city_id(name: str) -> str:
-    """Create a unique node ID for a city."""
-    return f"city:{name}"
-
-
-def category_id(name: str) -> str:
-    """Create a unique node ID for a category."""
-    return f"category:{name}"
-
-
 # ---------------------------------------------------------------------------
 # Graph construction
 # ---------------------------------------------------------------------------
@@ -139,14 +128,14 @@ def build_graph(since: str | None = None, until: str | None = None) -> nx.DiGrap
     """Build the interaction graph from raw CSV logs.
 
     Reads 職缺瀏覽 and 主動應徵 directly, filtering by date window.
-    Then enriches Job nodes with metadata from 職缺.csv.
+    Then enriches Job nodes with metadata from 職缺.csv (city, category).
 
     Args:
         since: Start date (inclusive), defaults to GRAPH_SINCE env var.
         until: End date (inclusive), defaults to GRAPH_UNTIL env var.
 
     Returns:
-        A networkx DiGraph with User and Job nodes + weighted interaction edges.
+        A networkx DiGraph with User→Job weighted interaction edges.
     """
     since = since or GRAPH_SINCE
     until = until or GRAPH_UNTIL
@@ -192,7 +181,7 @@ def build_graph(since: str | None = None, until: str | None = None) -> nx.DiGrap
 
     # --- 2. Job metadata for the nodes that actually appear -----------------
     t0 = time.time()
-    meta: dict[int, tuple[str, str, float | None]] = {}
+    meta: dict[int, tuple[str, str]] = {}
     with open(JOBS_CSV, newline="", encoding="utf-8-sig") as fh:
         for row in csv.DictReader(fh):
             try:
@@ -202,11 +191,7 @@ def build_graph(since: str | None = None, until: str | None = None) -> nx.DiGrap
             if jid in jobs_seen:
                 city = (row.get("工作城市") or "").strip()
                 cat = (row.get("職務中類") or "").strip()
-                try:
-                    salary = float(row.get("薪資下限") or 0) or None
-                except (ValueError, TypeError):
-                    salary = None
-                meta[jid] = (city, cat, salary)
+                meta[jid] = (city, cat)
     print(f"  job metadata for {len(meta):,} jobs ({time.time()-t0:.0f}s)")
 
     # --- 3. Assemble the graph ---------------------------------------------
@@ -214,24 +199,20 @@ def build_graph(since: str | None = None, until: str | None = None) -> nx.DiGrap
     G = nx.DiGraph()
 
     for jid in jobs_seen:
-        city, cat, salary = meta.get(jid, ("", "", None))
+        city, cat = meta.get(jid, ("", ""))
         G.add_node(
             f"job:{jid}",
             node_type="Job",
             job_id=jid,
-            jobId=jid,
             city=city,
             category_mid=cat,
-            categoryMid=cat,
-            salaryLower=salary if salary else 0,
         )
 
     for talent_no in users:
         G.add_node(f"user:{talent_no}", node_type="User", talentNo=talent_no)
 
     for (talent_no, jid), w in edge_w.items():
-        edge_type = "APPLIED" if w >= WEIGHT_APPLY else "VIEWED"
-        G.add_edge(f"user:{talent_no}", f"job:{jid}", weight=w, edge_type=edge_type)
+        G.add_edge(f"user:{talent_no}", f"job:{jid}", weight=w)
 
     print(f"  graph assembled ({time.time()-t0:.0f}s)")
 
@@ -241,72 +222,6 @@ def build_graph(since: str | None = None, until: str | None = None) -> nx.DiGrap
     print(f"  edges {G.number_of_edges():,}")
 
     return G
-
-
-# ---------------------------------------------------------------------------
-# Utility functions (used by graph_ranker)
-# ---------------------------------------------------------------------------
-
-
-def get_job_skills(G: nx.DiGraph, jnode: str) -> set[str]:
-    """Get all skills required by a job node.
-
-    Looks for outgoing REQUIRES edges from the job node.
-    Returns empty set if no skill nodes are present in this graph.
-    """
-    skills = set()
-    for successor in G.successors(jnode):
-        edge_data = G.edges[jnode, successor]
-        if edge_data.get("edge_type") == "REQUIRES":
-            name = G.nodes[successor].get("name", "")
-            if name:
-                skills.add(name)
-    return skills
-
-
-def get_user_skills(G: nx.DiGraph, uid: str) -> dict[str, float]:
-    """Get all skills a user has (with strength).
-
-    Looks for outgoing HAS_SKILL edges from the user node.
-    Returns empty dict if no skill edges are present.
-    """
-    skills = {}
-    for successor in G.successors(uid):
-        edge_data = G.edges[uid, successor]
-        if edge_data.get("edge_type") == "HAS_SKILL":
-            name = G.nodes[successor].get("name", "")
-            if name:
-                skills[name] = edge_data.get("strength", 0.5)
-    return skills
-
-
-def get_user_preferred_cities(G: nx.DiGraph, uid: str) -> dict[str, float]:
-    """Get user's preferred cities (with strength).
-
-    Looks for outgoing PREFERS_CITY edges from the user node.
-    Returns empty dict if no preference edges are present.
-    """
-    cities = {}
-    for successor in G.successors(uid):
-        edge_data = G.edges[uid, successor]
-        if edge_data.get("edge_type") == "PREFERS_CITY":
-            name = G.nodes[successor].get("name", "")
-            if name:
-                cities[name] = edge_data.get("strength", 0.5)
-    return cities
-
-
-def get_jobs_requiring_skill(G: nx.DiGraph, skill_name: str) -> set[str]:
-    """Get all job node IDs that require a given skill."""
-    snode = skill_id(skill_name)
-    if snode not in G:
-        return set()
-    jobs = set()
-    for pred in G.predecessors(snode):
-        edge_data = G.edges[pred, snode]
-        if edge_data.get("edge_type") == "REQUIRES":
-            jobs.add(pred)
-    return jobs
 
 
 # ---------------------------------------------------------------------------

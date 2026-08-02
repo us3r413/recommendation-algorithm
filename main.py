@@ -83,7 +83,7 @@ def debug_recommend(query: str, talent_no: int, c0=None, d0=None):
     t1 = time.perf_counter()
     print(f"\n[Stage 1] querytoRequirement → tags:  ({t1-t0:.2f}s)")
     #tag hijack (to showcase what happens when you don't do semantic expansion)
-    tags = {"咖啡店"}
+    #tags = {"咖啡店"}
     print(f"  {tags}")
 
     # Stage 2
@@ -124,10 +124,14 @@ if USE_GRAPH_RAG or GRAPH_FOR_ANONYMOUS:
 #debug_recommend("台北 前端工程師 35k以上", talent_no=0)
 
 # # --- Example 2: Anonymous user, broader query with city filter ---
-debug_recommend("咖啡店 打工 台北", talent_no=0)
+#debug_recommend("便利商店 打工 台北", talent_no=0)
 
 # # --- Example 3: Anonymous user, job category filter only ---
-# debug_recommend("", talent_no=0, c0=["100100", "100200"], d0=["140214", "140213"])
+#100900 台中市,台中市,台灣
+#140213,網站程式設計師
+#140214,前端工程師
+#140215,後端工程師
+#debug_recommend("錢多事少", talent_no=0,d0=["140213","140214","140215"], c0= ["100900"])
 
 # # --- Example 4: Anonymous user, keyword + city ---
 #debug_recommend("在家工作", talent_no=0)
@@ -136,7 +140,7 @@ debug_recommend("咖啡店 打工 台北", talent_no=0)
 #debug_recommend("software engineer", talent_no=0)
 
 # --- Example 6: Signed-in user, broader query ---
-#debug_recommend("行銷企劃", talent_no=143)
+debug_recommend("行銷企劃", talent_no=143)
 
 # --- Example 7: Signed-in user, different preference ---
 #debug_recommend("台中 兼職 門市", talent_no=301)
