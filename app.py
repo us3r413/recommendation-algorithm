@@ -79,6 +79,21 @@ async def health():
     return {"status": "ok"}
 
 
+@app.get("/debug/db-status")
+async def db_status():
+    """Debug: check if DuckDB tables are loaded and have rows."""
+    from src.retriever import _get_db
+    con = _get_db()
+    jobs_count = con.execute("SELECT COUNT(*) FROM jobs").fetchone()[0]
+    pop_count = con.execute("SELECT COUNT(*) FROM popularity").fetchone()[0]
+    sample = con.execute("SELECT 職缺編號, 職務名稱, 工作城市 FROM jobs LIMIT 3").fetchall()
+    return {
+        "jobs_rows": jobs_count,
+        "popularity_rows": pop_count,
+        "sample_jobs": [{"id": r[0], "title": r[1], "city": r[2]} for r in sample],
+    }
+
+
 @app.post("/api/v1/jobs/search", response_model=JobSearchResponse)
 async def job_search(req: JobSearchRequest):
     """Official competition search endpoint.
