@@ -59,7 +59,7 @@
 
 ## 投影片 6 & 7：第二階段 — Retriever（Data Retrieval）
 
-有了關鍵字之後，進入第二階段：Retriever，也就是資料檢索。
+有了tag之後，進入第二階段：Retriever，也就是資料檢索。
 
 這一階段做的事情，是**把前面產生的 tag 變成篩選條件**。
 
