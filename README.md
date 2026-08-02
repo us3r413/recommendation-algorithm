@@ -37,7 +37,7 @@
 │        │                                                             │
 │        ▼                                                             │
 │   ┌──────────────────────────┐                                       │
-│   │  querytoRequirement()    │  ← AWS Bedrock (Claude 3.5 Haiku)     │
+│   │  querytoRequirement()    │  ← AWS Bedrock (Claude Sonnet 4)      │
 │   │  • 縮寫展開 (rule-based) │  ← src/utils/abbreviations.py        │
 │   │  • LLM 語意解析+語意擴展 │  ← 翻譯、品牌展開、同義詞           │
 │   │  • LRU 快取 (256 筆)     │  ← 重複查詢 ~0ms                     │
@@ -267,15 +267,15 @@ pip install -r requirements.txt
 ### 環境變數
 
 ```env
-BEDROCK_MODEL_ID=us.anthropic.claude-3-5-haiku-20241022-v1:0
+BEDROCK_MODEL_ID=us.anthropic.claude-sonnet-4-6
 AWS_DEFAULT_REGION=us-west-2
 AWS_ACCESS_KEY_ID=your-access-key
 AWS_SECRET_ACCESS_KEY=your-secret-key
 AWS_SESSION_TOKEN=your-session-token
 
 # Graph ranking toggle
-GRAPH_FOR_SIGNED_IN_USER=true
-GRAPH_FOR_ANONYMOUS_USER=true
+GRAPH_FOR_SIGNED_IN_USER=false
+GRAPH_FOR_ANONYMOUS_USER=false
 
 # Neptune connection
 USE_NEPTUNE=true
@@ -285,13 +285,13 @@ NEPTUNE_PORT=8182
 
 | 變數名稱 | 說明 | 預設值 |
 |----------|------|--------|
-| `BEDROCK_MODEL_ID` | Bedrock 模型 ID | `us.anthropic.claude-3-5-haiku-20241022-v1:0` |
+| `BEDROCK_MODEL_ID` | Bedrock 模型 ID | `us.anthropic.claude-sonnet-4-6` |
 | `AWS_DEFAULT_REGION` | AWS 區域 | `us-west-2` |
 | `USE_NEPTUNE` | 啟用 Neptune 圖譜 | `false` |
 | `NEPTUNE_ENDPOINT` | Neptune cluster endpoint | — |
 | `NEPTUNE_PORT` | Neptune port | `8182` |
-| `GRAPH_FOR_SIGNED_IN_USER` | 登入用戶啟用圖譜排序 | `true` |
-| `GRAPH_FOR_ANONYMOUS_USER` | 匿名用戶啟用圖譜排序 | `true` |
+| `GRAPH_FOR_SIGNED_IN_USER` | 登入用戶啟用圖譜排序 | `false` |
+| `GRAPH_FOR_ANONYMOUS_USER` | 匿名用戶啟用圖譜排序 | `false` |
 
 ---
 
@@ -344,7 +344,7 @@ export NEPTUNE_ENDPOINT=db-neptune-1.cluster-cl8ocu4ecpw9.us-west-2.neptune.amaz
 # ... (other env vars)
 
 # Start API
-nohup python3.11 -u -m uvicorn api:app --host 0.0.0.0 --port 8000 > api.log 2>&1 &
+nohup python3.11 -u -m uvicorn app:app --host 0.0.0.0 --port 8000 > api.log 2>&1 &
 
 # Build/rebuild graph (background)
 nohup python3.11 -u -m src.graph_builder > graph_build.log 2>&1 &
@@ -372,7 +372,7 @@ results = recommend("後端 pt工作", talent_no=12345)
 ### 啟動 API Server
 
 ```bash
-uvicorn api:app --host 0.0.0.0 --port 8000
+uvicorn app:app --host 0.0.0.0 --port 8000
 ```
 
 ---
@@ -392,10 +392,10 @@ python main.py
 
 | 階段 | 典型延遲 | 備註 |
 |------|----------|------|
-| Stage 1 (querytoRequirement) | 1–2s（首次）/ ~0ms（快取） | Haiku 比 Sonnet 快 3-5x |
+| Stage 1 (querytoRequirement) | 1–3s（首次）/ ~0ms（快取） | Sonnet 4；可切換 Haiku 加速 |
 | Stage 2 (grabFromDatabase) | 0.5–2s | DuckDB in-memory |
 | Stage 3 (ranking + Neptune) | 50–200ms | Gremlin 遍歷 |
-| 端到端（首次） | 2–4s | 瓶頸在 LLM |
+| 端到端（首次） | 2–5s | 瓶頸在 LLM |
 | 端到端（快取命中） | 0.5–2s | 跳過 LLM |
 
 ---
@@ -487,7 +487,7 @@ bash eval/reproduce.sh --quick    # 50 筆，快速驗證流程
 
 | 元件 | 模型 / 版本 | 用途 |
 |------|-------------|------|
-| LLM | Claude 3.5 Haiku (via AWS Bedrock) | 查詢語意解析 + 技能萃取 |
+| LLM | Claude Sonnet 4 (via AWS Bedrock) | 查詢語意解析 + 技能萃取 |
 | 查詢引擎 | DuckDB 1.3.0 | SQL 篩選 ~1M 職缺 |
 | 圖譜引擎 | Amazon Neptune + Gremlin | 能力知識圖譜遍歷 |
 | 本地圖譜 | networkx 3.4.2 | 開發/測試用 fallback |
@@ -509,8 +509,13 @@ bash eval/reproduce.sh --quick    # 50 筆，快速驗證流程
 
 ```
 recommendation-algorithm/
-├── api.py                         # FastAPI 應用（/api/v1/jobs/search, /health）
+├── app.py                         # FastAPI 應用（/api/v1/jobs/search, /health）
 ├── main.py                        # 本機 debug 入口
+├── apitest.py                     # 遠端 API 測試腳本
+├── conftest.py                    # Pytest 共用 fixtures
+├── Dockerfile                     # Docker 容器化（python:3.11-slim + uvicorn）
+├── .dockerignore                  # Docker build 排除項
+├── deploy.md                      # 部署筆記
 ├── dataset/                       # 原始 + 衍生資料 + ETL 腳本
 │   ├── genViewCount.py            # 產生瀏覽次數.csv
 │   ├── userAnalysis.py            # 產生用戶行為特徵
@@ -524,8 +529,21 @@ recommendation-algorithm/
 │   ├── graph_builder.py           # 圖譜建構（Neptune + networkx）
 │   ├── graph_ranker.py            # 能力圖譜排序邏輯
 │   ├── skill_extractor.py         # 混合技能萃取（結構化 + LLM）
-│   ├── utils/                     # 工具模組
+│   ├── utils/                     # 工具模組（abbreviations, tag_parser）
 │   └── tests/                     # 單元與整合測試
+├── eval/                          # 離線評測框架
+│   ├── EXPERIMENT_DESIGN.md       # 實驗設計方法
+│   ├── EVALUATION_REPORT.md       # 評測結果報告
+│   ├── ABLATION_REPORT.md         # Ablation study 報告
+│   ├── metrics.py                 # 評測指標（NDCG, MRR, Hit@K）
+│   ├── build_testset.py           # 測試集產生
+│   ├── run_ablation.py            # Ablation 實驗執行器
+│   ├── reproduce.sh               # 一鍵重現所有評測
+│   └── testset.jsonl              # 評測測試集
+├── infra/                         # AWS 基礎設施 & 部署
+│   ├── cloudformation.yaml        # EC2 + 安全群組（t3.large, port 8000）
+│   ├── deploy-to-ec2.ps1         # PowerShell 部署腳本
+│   └── setup-ec2.sh              # EC2 環境初始化
 ├── 設計文件/                      # 設計文件
 │   ├── draft3rewrite.md           # Pipeline 設計參考
 │   └── neptune_graph_design.md    # Neptune 圖譜 schema 設計
@@ -547,6 +565,7 @@ recommendation-algorithm/
 
 ```
 duckdb==1.3.0
+hypothesis==6.135.26
 pandas==2.2.3
 boto3>=1.35.0
 python-dotenv==1.2.2
@@ -564,3 +583,5 @@ gremlinpython==3.7.3
 | `networkx` | 本地圖譜 fallback |
 | `gremlinpython` | Neptune Gremlin 客戶端 |
 | `fastapi` + `uvicorn` | Web API |
+| `hypothesis` | Property-based 測試 |
+| `python-dotenv` | 環境變數載入 |
